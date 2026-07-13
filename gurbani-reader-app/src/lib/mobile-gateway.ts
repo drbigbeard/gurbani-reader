@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { lines, phoneticCandidates } from '../data/fixture';
-import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResult, CorpusSearchResponse, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, ProviderLayer, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
+import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResult, CorpusSearchResponse, FrequencyPage, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, ProviderLayer, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
 import { MOBILE_DATABASE_NAME, MOBILE_SCHEMA_SQL, MOBILE_SCHEMA_VERSION } from './mobile-schema';
 
 type DatabaseRow = Record<string, unknown>;
@@ -456,6 +456,46 @@ export class MobileCorpusGateway {
     const db = await this.db();
     const result = await db.query(`SELECT exact_form AS form, COUNT(*) AS frequency, COUNT(DISTINCT line_id) AS distinctLines FROM token_occurrence WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi' GROUP BY exact_form ORDER BY frequency DESC, exact_form LIMIT ?`, [sourceWorkId, limit]);
     return (result.values ?? []).map(row => ({ form: String(row.form), frequency: numberValue(row.frequency), distinctLines: numberValue(row.distinctLines) }));
+  }
+
+  async rankedFormsPage(sourceWorkId = 'source:G', letter = '', limit = 100, offset = 0): Promise<FrequencyPage> {
+    const db = await this.db();
+    const clause = letter ? 'AND exact_form LIKE ?' : '';
+    const base = [sourceWorkId, sourceWorkId, ...(letter ? [`${letter}%`] : [])];
+    const [count, rows] = await Promise.all([
+      db.query(`SELECT COUNT(*) AS total FROM (SELECT exact_form FROM token_occurrence
+        WHERE (? = 'all' OR source_work_id = ?) AND token_class = 'lexical_gurmukhi' ${clause} GROUP BY exact_form)`, base),
+      db.query(`SELECT exact_form AS form, COUNT(*) AS frequency, COUNT(DISTINCT line_id) AS distinctLines
+        FROM token_occurrence WHERE (? = 'all' OR source_work_id = ?) AND token_class = 'lexical_gurmukhi' ${clause}
+        GROUP BY exact_form ORDER BY frequency DESC, exact_form LIMIT ? OFFSET ?`, [...base, limit, offset])
+    ]);
+    return { total: numberValue(first(count.values).total), offset, limit,
+      forms: (rows.values ?? []).map(row => ({ form: String(row.form), frequency: numberValue(row.frequency), distinctLines: numberValue(row.distinctLines) })) };
+  }
+
+  async linesByIds(ids: string[]): Promise<CanonicalLine[]> {
+    if (!ids.length) return [];
+    const db = await this.db(); const placeholders = ids.map(() => '?').join(',');
+    const result = await db.query(`SELECT l.id, l.source_work_id AS sourceWorkId, l.text_unit_id AS textUnitId,
+      l.line_order AS 'order', l.ang, l.gurmukhi, COALESCE(l.transliteration, '') AS transliteration,
+      COALESCE(l.contributor_id, '') AS contributorId, COALESCE(c.preferred_name, '') AS contributorName
+      FROM canonical_line l LEFT JOIN contributor c ON c.id = l.contributor_id WHERE l.id IN (${placeholders})`, ids);
+    const byId = new Map((result.values ?? []).map(row => [String(row.id), row as unknown as CanonicalLine]));
+    return ids.flatMap(id => byId.get(id) ? [byId.get(id)!] : []);
+  }
+
+  async textUnitsByIds(ids: string[]): Promise<TextUnitSummary[]> {
+    if (!ids.length) return [];
+    const db = await this.db(); const placeholders = ids.map(() => '?').join(',');
+    const result = await db.query(`SELECT u.id, u.source_work_id AS sourceWorkId, COALESCE(u.title, 'Sabad') AS title,
+      COALESCE(MIN(l.contributor_id), '') AS contributorId, COALESCE(MIN(c.preferred_name), '') AS contributorName,
+      MIN(l.ang) AS firstAng, MAX(l.ang) AS lastAng, COUNT(l.id) AS lineCount, COALESCE(MIN(l.raag), 'Unclassified') AS raag,
+      COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id=u.id ORDER BY x.ang,x.line_order LIMIT 1),'') AS preview,
+      COALESCE((SELECT x.transliteration FROM canonical_line x WHERE x.text_unit_id=u.id ORDER BY x.ang,x.line_order LIMIT 1),'') AS transliteration
+      FROM text_unit u JOIN canonical_line l ON l.text_unit_id=u.id LEFT JOIN contributor c ON c.id=l.contributor_id
+      WHERE u.id IN (${placeholders}) GROUP BY u.id`, ids);
+    const byId = new Map((result.values ?? []).map(row => [String(row.id), textUnitSummary(row)]));
+    return ids.flatMap(id => byId.get(id) ? [byId.get(id)!] : []);
   }
 
   async contributorSummaries(limit = 1000, sourceWorkId = 'source:G'): Promise<ContributorSummary[]> {

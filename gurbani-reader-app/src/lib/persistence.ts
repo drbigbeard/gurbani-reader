@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { personalStoreSupported, readPersonalState, writePersonalState } from './personal-store';
+import type { SearchFilters, SearchMode } from '../types';
 
 export interface ReaderPreferences {
   showTransliteration: boolean;
@@ -22,7 +23,14 @@ export interface PersonalData {
   notes: Record<string, string>;
   savedTerms: string[];
   readingPosition: string | null;
+  collections: PersonalCollection[];
+  history: ReadingHistoryEntry[];
+  savedSearches: SavedSearch[];
 }
+
+export interface PersonalCollection { id: string; title: string; lineIds: string[]; createdAt: string; }
+export interface ReadingHistoryEntry { textUnitId: string; lineId: string | null; visitedAt: string; }
+export interface SavedSearch { id: string; title: string; query: string; filters: SearchFilters; mode: SearchMode; }
 
 export const defaultPreferences: ReaderPreferences = {
   showTransliteration: true,
@@ -55,7 +63,10 @@ export const defaultPersonalData: PersonalData = {
   bookmarks: [],
   notes: {},
   savedTerms: [],
-  readingPosition: null
+  readingPosition: null,
+  collections: [],
+  history: [],
+  savedSearches: []
 };
 
 export function usePersistentState<T>(key: string, initial: T): [T, (next: T | ((current: T) => T)) => void] {

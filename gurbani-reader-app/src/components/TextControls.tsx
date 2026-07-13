@@ -2,6 +2,7 @@ import type { ReaderPreferences } from '../lib/persistence';
 
 type SetPreferences = (next: ReaderPreferences | ((current: ReaderPreferences) => ReaderPreferences)) => void;
 const themes: ReaderPreferences['theme'][] = ['paper', 'sepia', 'light', 'dark', 'black'];
+const themeBackground: Record<ReaderPreferences['theme'], string> = { paper: '#fbf7ed', sepia: '#f3e6cc', light: '#ffffff', dark: '#17201d', black: '#000000' };
 
 export function TextControls({ preferences, setPreferences }: { preferences: ReaderPreferences; setPreferences: SetPreferences }) {
   const adjust = (key: 'textScale' | 'transliterationScale' | 'interpretationScale', delta: number) => setPreferences(current => ({ ...current, [key]: clamp(current[key] + delta, .55, 2) }));
@@ -14,7 +15,8 @@ export function TextControls({ preferences, setPreferences }: { preferences: Rea
     <Control label="Latin / English" value={preferences.transliterationScale} decrease={() => adjust('transliterationScale', -.1)} increase={() => adjust('transliterationScale', .1)} />
     <Control label="Interpretation" value={preferences.interpretationScale} decrease={() => adjust('interpretationScale', -.1)} increase={() => adjust('interpretationScale', .1)} />
     <label className="spacing-control"><span>Line spacing</span><input type="range" min="1.15" max="2.4" step="0.05" value={preferences.lineSpacing} onChange={event => setPreferences(current => ({ ...current, lineSpacing: Number(event.target.value) }))} /><b>{preferences.lineSpacing.toFixed(2)}</b></label>
-    <fieldset className="theme-choices"><legend>Theme</legend>{themes.map(theme => <button className={preferences.theme === theme ? 'active' : ''} key={theme} onClick={() => setPreferences(current => ({ ...current, theme }))}>{theme}</button>)}</fieldset>
+    <fieldset className="theme-choices"><legend>Theme</legend>{themes.map(theme => <button className={preferences.theme === theme ? 'active' : ''} key={theme} onClick={() => setPreferences(current => ({ ...current, theme, backgroundColor: themeBackground[theme] }))}>{theme}</button>)}</fieldset>
+    <label>Background colour <input type="color" value={preferences.backgroundColor} onChange={event => setPreferences(current => ({ ...current, backgroundColor: event.target.value }))} /></label>
     <label>Gurmukhi colour <input type="color" value={preferences.gurmukhiColor} onChange={event => setPreferences(current => ({ ...current, gurmukhiColor: event.target.value }))} /></label>
     <label>Latin / English colour <input type="color" value={preferences.latinColor} onChange={event => setPreferences(current => ({ ...current, latinColor: event.target.value }))} /></label>
   </div></details>;

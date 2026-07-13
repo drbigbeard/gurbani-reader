@@ -1,5 +1,5 @@
 import { lines, phoneticCandidates } from '../data/fixture';
-import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResponse, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
+import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResponse, FrequencyPage, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
 import { MobileCorpusGateway } from './mobile-gateway';
 
 const lexicalTokens = (line: CanonicalLine): string[] =>
@@ -12,6 +12,7 @@ export interface CorpusGateway {
   sources(): Promise<SourceWorkOption[]>;
   corpusInfo(): Promise<CorpusInfo>;
   rankedForms(limit?: number, sourceWorkId?: string): Promise<RankedForm[]>;
+  rankedFormsPage(sourceWorkId?: string, letter?: string, limit?: number, offset?: number): Promise<FrequencyPage>;
   contributorSummaries(limit?: number, sourceWorkId?: string): Promise<ContributorSummary[]>;
   glossary(query: string, limit?: number): Promise<GlossaryResult[]>;
   getTextUnit(textUnitId: string): Promise<ShabadView>;
@@ -27,6 +28,8 @@ export interface CorpusGateway {
   raagUnits(raag: string, sourceWorkId?: string, limit?: number, offset?: number, contributorId?: string): Promise<TextUnitSummary[]>;
   namedBanis(sourceWorkId?: string): Promise<BaniSummary[]>;
   getBani(baniId: string): Promise<BaniView>;
+  linesByIds(ids: string[]): Promise<CanonicalLine[]>;
+  textUnitsByIds(ids: string[]): Promise<TextUnitSummary[]>;
 }
 
 class FixtureCorpusGateway implements CorpusGateway {
@@ -70,6 +73,7 @@ class FixtureCorpusGateway implements CorpusGateway {
     for (const line of lines) for (const form of lexicalTokens(line)) { const row = counts.get(form) ?? { frequency: 0, lineIds: new Set<string>() }; row.frequency += 1; row.lineIds.add(line.id); counts.set(form, row); }
     return [...counts].map(([form, row]) => ({ form, frequency: row.frequency, distinctLines: row.lineIds.size })).sort((a, b) => b.frequency - a.frequency).slice(0, limit);
   }
+  async rankedFormsPage(_sourceWorkId = 'source:G', letter = '', limit = 50, offset = 0): Promise<FrequencyPage> { const forms = (await this.rankedForms(1000)).filter(row => !letter || row.form.startsWith(letter)); return { total: forms.length, offset, limit, forms: forms.slice(offset, offset + limit) }; }
   async contributorSummaries(): Promise<ContributorSummary[]> { return [{ id: 'contributor:guru-nanak-sahib', name: 'Guru Nanak Sahib', type: 'guru', unitCount: 1, lineCount: lines.length }]; }
   async glossary(): Promise<GlossaryResult[]> { return []; }
   async getTextUnit(textUnitId: string): Promise<ShabadView> {
@@ -101,6 +105,8 @@ class FixtureCorpusGateway implements CorpusGateway {
   async raagUnits(): Promise<TextUnitSummary[]> { return []; }
   async namedBanis(): Promise<BaniSummary[]> { return []; }
   async getBani(): Promise<BaniView> { throw new Error('Named Banis are not available in the fixture'); }
+  async linesByIds(ids: string[]): Promise<CanonicalLine[]> { return lines.filter(line => ids.includes(line.id)); }
+  async textUnitsByIds(ids: string[]): Promise<TextUnitSummary[]> { return (await Promise.all(ids.map(id => this.getTextUnit(id).catch(() => null)))).flatMap(value => value ? [value] : []); }
 }
 
 interface ApiEnvelope<T> {
@@ -139,6 +145,7 @@ export class HttpCorpusGateway implements CorpusGateway {
 
   async corpusInfo(): Promise<CorpusInfo> { throw new Error('Corpus information endpoint is not available'); }
   async rankedForms(): Promise<RankedForm[]> { throw new Error('Rankings endpoint is not available'); }
+  async rankedFormsPage(): Promise<FrequencyPage> { throw new Error('Rankings endpoint is not available'); }
   async contributorSummaries(): Promise<ContributorSummary[]> { throw new Error('Contributor endpoint is not available'); }
   async glossary(): Promise<GlossaryResult[]> { throw new Error('Glossary endpoint is not available'); }
   async getTextUnit(): Promise<ShabadView> { throw new Error('Text-unit endpoint is not available'); }
@@ -154,6 +161,8 @@ export class HttpCorpusGateway implements CorpusGateway {
   async raagUnits(): Promise<TextUnitSummary[]> { throw new Error('Raag units endpoint is not available'); }
   async namedBanis(): Promise<BaniSummary[]> { throw new Error('Named Banis endpoint is not available'); }
   async getBani(): Promise<BaniView> { throw new Error('Named Bani endpoint is not available'); }
+  async linesByIds(): Promise<CanonicalLine[]> { throw new Error('Saved-line endpoint is not available'); }
+  async textUnitsByIds(): Promise<TextUnitSummary[]> { throw new Error('Saved-unit endpoint is not available'); }
 
   private async get<T>(path: string): Promise<T> {
     const response = await fetch(`${this.baseUrl.replace(/\/$/u, '')}${path}`, {

@@ -15,4 +15,4 @@ Canonical corpus data is powered by BaniDB, a Khalis Foundation initiative. Sikh
 
 ## Current checkpoint
 
-`v0.11.0-pass.1` combines the first two v0.11 implementation stages. It adds native Android Back handling, a separate personal-data database, a full in-app Gurmukhi keyboard, universal search with source/Raag/contributor/TGGSP filters, scope-preserving exact counts and concordance, exact-line opening, repaired SikhRI/TGGSP display and a permanent Android signing identity. Bhai Gurdas Ji and Bhai Gurdas Singh Ji are presented as one contributor while their upstream records remain intact.
+`v0.11.0-rc.1` combines all four planned alphas into two implementation passes. It includes native Android Back handling, separate personal data, a full in-app Gurmukhi keyboard, universal faceted search, scope-preserving counts and concordance, exact-line opening, repaired SikhRI/TGGSP display, complete paginated frequency browsing, structured Browse and Saved areas, notes, collections, history, saved searches, backup/import, direct references, adaptive accessibility work and a permanent Android signing identity.

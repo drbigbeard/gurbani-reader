@@ -156,6 +156,7 @@ export interface CorpusInfo {
 export interface SourceWorkOption { id: string; title: string; maxAng: number; }
 
 export interface RankedForm { form: string; frequency: number; distinctLines: number; }
+export interface FrequencyPage { total: number; offset: number; limit: number; forms: RankedForm[]; }
 export interface ContributorSummary { id: string; name: string; type: string; unitCount: number; lineCount: number; }
 export interface GlossaryResult { id: string; headword: string; content: string; provider: string; reviewStatus: string; }
 

@@ -1,6 +1,6 @@
 {
   "name": "gurbani-reader-app",
-  "version": "0.11.0-pass.1",
+  "version": "0.11.0-rc.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "build:native": "tsc -b && NATIVE_BUILD=true vite build",
     "check": "tsc -b --pretty false",
     "audit:pass1": "node scripts/audit-v011-pass1.mjs",
+    "audit:rc": "npm run audit:pass1 && node scripts/audit-v011-rc.mjs",
     "preview": "vite preview",
     "corpus:mobile-db": "node scripts/build-mobile-db.mjs",
     "corpus:upgrade-v2": "node scripts/upgrade-mobile-db-v2.mjs",
@@ -24,6 +25,8 @@
     "@capacitor-community/sqlite": "8.1.0",
     "@capacitor/app": "8.1.0",
     "@capacitor/core": "8.4.1",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },

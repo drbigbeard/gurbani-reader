@@ -2,7 +2,7 @@
 
 Local-first React/TypeScript and Capacitor reader for Android and iOS, backed by bundled SQLite reading data.
 
-## Current alpha
+## Current release candidate
 
 - Guru Granth Sahib and Vaaran Bhai Gurdas Ji reading sources. The two upstream
   Bhai Gurdas contributor records are presented as one author in the app.
@@ -10,6 +10,8 @@ Local-first React/TypeScript and Capacitor reader for Android and iOS, backed by
 - Shabad-first author and Raag navigation.
 - Gurmukhi, phonetic Latin and attributed SikhRI/TGGSP English-analysis search.
 - Separately attributed SikhRI/TGGSP analysis with explicit mapped and unresolved coverage.
+- Complete paginated frequency exploration, personal notes, collections, history,
+  saved searches, direct references and portable JSON backup/import.
 
 ## Run
 
@@ -30,7 +32,7 @@ npx cap sync
 cd android && ./gradlew assembleDebug # development only
 ```
 
-The database name is schema-versioned. Installing v0.11 Pass 1 copies the v4
+The database name is schema-versioned. Installing v0.11 RC 1 copies the v4
 reading database automatically. GitHub Actions compiles an unsigned build input;
 the release process signs and verifies the installable APK with the permanent
 private key. Local debug builds cannot upgrade that release. Personal data and
