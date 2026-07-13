@@ -35,17 +35,27 @@ jobs:
       - run: npx cap sync android
       - run: ./gradlew assembleRelease
         working-directory: gurbani-reader-app/android
-      - name: Label unsigned build input
-        run: cp android/app/build/outputs/apk/release/app-release-unsigned.apk Gurbani-Reader-v0.11-rc1-unsigned-do-not-install.apk
+      - name: Align unsigned APK for 16 KB Android devices
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          ZIPALIGN="$(find "$SDK_ROOT/build-tools" -type f -name zipalign -print | sort -V | tail -n 1)"
+          test -n "$ZIPALIGN"
+          test -x "$ZIPALIGN"
+          "$ZIPALIGN" -P 16 -f -v 4 \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk \
+            Gurbani-Reader-v0.11-rc2-aligned-unsigned-do-not-install.apk
+          "$ZIPALIGN" -c -P 16 -v 4 \
+            Gurbani-Reader-v0.11-rc2-aligned-unsigned-do-not-install.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Gurbani-Reader-v0.11-rc1-unsigned-build-input
-          path: gurbani-reader-app/Gurbani-Reader-v0.11-rc1-unsigned-do-not-install.apk
+          name: Gurbani-Reader-v0.11-rc2-aligned-unsigned-build-input
+          path: gurbani-reader-app/Gurbani-Reader-v0.11-rc2-aligned-unsigned-do-not-install.apk
           if-no-files-found: error
       - name: Publish unsigned build input for private-key signing
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v0.11.0-rc.1
+          TAG: v0.11.0-rc.2
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.11 RC 1" --notes "Automated Android build input. Do not install the unsigned asset; use the separately signed and verified APK supplied from the release process."
-          gh release upload "$TAG" Gurbani-Reader-v0.11-rc1-unsigned-do-not-install.apk --clobber
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.11 RC 2" --notes "Automated, 16 KB-aligned Android build input. Do not install the unsigned asset; use the separately signed and verified APK supplied from the release process."
+          gh release upload "$TAG" Gurbani-Reader-v0.11-rc2-aligned-unsigned-do-not-install.apk --clobber
