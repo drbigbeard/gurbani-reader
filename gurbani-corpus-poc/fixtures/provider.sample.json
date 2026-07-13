@@ -1,0 +1,37 @@
+{
+  "fixtureNotice": "Technical mapping fixture; contains no SikhRI-authored interpretive text.",
+  "providerRelease": {
+    "id": "fixture-provider-2026-07-12",
+    "provider": "SikhRI/TGGSP technical fixture",
+    "generatedAt": "2026-07-12T00:00:00Z"
+  },
+  "records": [
+    {
+      "id": "provider:fixture:1",
+      "compositionId": "provider:jap",
+      "lineOrder": 1,
+      "referenceGurmukhi": "ਸੁਣਿਐ ਸਿਧ ਪੀਰ ਸੁਰਿ ਨਾਥ ॥",
+      "contentType": "literal_translation",
+      "content": "[Authorised provider content intentionally omitted from fixture]",
+      "requiredAttribution": "SikhRI/TGGSP — demonstration metadata only"
+    },
+    {
+      "id": "provider:fixture:2",
+      "compositionId": "provider:jap",
+      "lineOrder": 2,
+      "referenceGurmukhi": "ਸੁਣਿਐ  ਧਰਤਿ ਧਵਲ ਆਕਾਸ ॥",
+      "contentType": "interpretive_transcreation",
+      "content": "[Authorised provider content intentionally omitted from fixture]",
+      "requiredAttribution": "SikhRI/TGGSP — demonstration metadata only"
+    },
+    {
+      "id": "provider:fixture:unmatched",
+      "compositionId": "provider:unknown",
+      "lineOrder": 1,
+      "referenceGurmukhi": "ਤਕਨੀਕੀ ਬੇਮੇਲ ਨਮੂਨਾ",
+      "contentType": "commentary",
+      "content": "[Unmatched technical record]",
+      "requiredAttribution": "Technical fixture"
+    }
+  ]
+}

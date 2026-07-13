@@ -1,0 +1,20 @@
+{
+  "name": "gurbani-corpus-poc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Proof-of-concept canonical ingestion, crosswalk and corpus-analysis pipeline",
+  "scripts": {
+    "build:index": "node src/cli.mjs build",
+    "fetch:banidb": "node src/fetch-banidb.mjs",
+    "fetch:tggsp": "node src/fetch-tggsp.mjs",
+    "align:tggsp": "node src/align-tggsp.mjs",
+    "merge:corpora": "node src/merge-corpora.mjs",
+    "filter:corpus": "node src/filter-corpus.mjs",
+    "query": "node src/cli.mjs query",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "fixtureNotice": "Technical fixture for pipeline validation; not an asserted BaniDB API response.",
+  "corpusRelease": {
+    "id": "fixture-corpus-2026-07-12",
+    "upstream": "technical-fixture",
+    "generatedAt": "2026-07-12T00:00:00Z"
+  },
+  "sourceWorks": [
+    {
+      "id": "source:G",
+      "upstreamId": "G",
+      "title": "Guru Granth Sahib",
+      "profile": "verse_corpus"
+    }
+  ],
+  "contributors": [
+    {
+      "id": "contributor:guru-nanak-sahib",
+      "name": "Guru Nanak Sahib",
+      "type": "guru"
+    }
+  ],
+  "textUnits": [
+    {
+      "id": "unit:jap",
+      "upstreamId": "fixture-jap",
+      "sourceWorkId": "source:G",
+      "parentId": null,
+      "unitType": "bani",
+      "order": 1,
+      "title": "Jap"
+    },
+    {
+      "id": "unit:jap:pauri-8",
+      "upstreamId": "fixture-jap-p8",
+      "sourceWorkId": "source:G",
+      "parentId": "unit:jap",
+      "unitType": "pauri",
+      "order": 8,
+      "title": "Pauri 8"
+    }
+  ],
+  "attributions": [
+    {
+      "id": "attribution:jap",
+      "contributorId": "contributor:guru-nanak-sahib",
+      "targetType": "textUnit",
+      "targetId": "unit:jap",
+      "role": "utterer",
+      "status": "fixture"
+    }
+  ],
+  "lines": [
+    {
+      "id": "line:fixture:1",
+      "upstreamId": "fixture-line-1",
+      "sourceWorkId": "source:G",
+      "textUnitId": "unit:jap:pauri-8",
+      "order": 1,
+      "ang": 2,
+      "lineClass": "canonical_verse",
+      "gurmukhi": "ਸੁਣਿਐ ਸਿਧ ਪੀਰ ਸੁਰਿ ਨਾਥ ॥"
+    },
+    {
+      "id": "line:fixture:2",
+      "upstreamId": "fixture-line-2",
+      "sourceWorkId": "source:G",
+      "textUnitId": "unit:jap:pauri-8",
+      "order": 2,
+      "ang": 2,
+      "lineClass": "canonical_verse",
+      "gurmukhi": "ਸੁਣਿਐ ਧਰਤਿ ਧਵਲ ਆਕਾਸ ॥"
+    },
+    {
+      "id": "line:fixture:3",
+      "upstreamId": "fixture-line-3",
+      "sourceWorkId": "source:G",
+      "textUnitId": "unit:jap:pauri-8",
+      "order": 3,
+      "ang": 2,
+      "lineClass": "canonical_verse",
+      "gurmukhi": "ਸੁਣਿਐ ਦੀਪ ਲੋਅ ਪਾਤਾਲ ॥"
+    }
+  ]
+}

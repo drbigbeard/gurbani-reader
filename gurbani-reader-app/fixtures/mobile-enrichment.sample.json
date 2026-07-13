@@ -1,0 +1,21 @@
+{
+  "fixtureNotice": "Technical fixture only; contains no SikhRI/TGGSP authored interpretation.",
+  "providerRelease": {
+    "id": "fixture-provider-2026-07-12",
+    "provider": "Technical fixture"
+  },
+  "lineTransliterations": [
+    { "canonicalLineId": "line:fixture:1", "transliteration": "suṇiai sidh pīr sur nāth." },
+    { "canonicalLineId": "line:fixture:2", "transliteration": "suṇiai dharat dhaval ākās." },
+    { "canonicalLineId": "line:fixture:3", "transliteration": "suṇiai dīp loa pātāl." }
+  ],
+  "providerContent": [],
+  "glossaryEntries": [],
+  "termForms": [
+    { "id": "term:har-i", "writtenForm": "ਹਰਿ", "transliteration": "har", "relationType": "exact_written_form" },
+    { "id": "term:har", "writtenForm": "ਹਰ", "transliteration": "har", "relationType": "different_exact_form" },
+    { "id": "term:hari", "writtenForm": "ਹਰੀ", "transliteration": "harī", "relationType": "related_pronunciation" },
+    { "id": "term:suniai", "writtenForm": "ਸੁਣਿਐ", "transliteration": "suṇiai", "relationType": "exact_written_form" }
+  ],
+  "tokenMappings": []
+}

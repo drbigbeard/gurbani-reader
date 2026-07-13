@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Gurbani Reader</string>
+    <string name="title_activity_main">Gurbani Reader</string>
+    <string name="package_name">app.gurbani.reader.local</string>
+    <string name="custom_url_scheme">app.gurbani.reader.local</string>
+</resources>

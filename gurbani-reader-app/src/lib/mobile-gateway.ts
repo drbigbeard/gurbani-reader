@@ -1,0 +1,633 @@
+import { Capacitor } from '@capacitor/core';
+import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
+import { lines, phoneticCandidates } from '../data/fixture';
+import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResult, CorpusSearchResponse, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, ProviderLayer, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
+import { MOBILE_DATABASE_NAME, MOBILE_SCHEMA_SQL, MOBILE_SCHEMA_VERSION } from './mobile-schema';
+
+type DatabaseRow = Record<string, unknown>;
+
+export class MobileCorpusGateway {
+  private readonly sqlite = new SQLiteConnection(CapacitorSQLite);
+  private connection: Promise<SQLiteDBConnection> | null = null;
+
+  static supported(): boolean {
+    return Capacitor.isNativePlatform();
+  }
+
+  async resolveCandidates(query: string): Promise<SearchCandidate[]> {
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+    if (/^[\u0A00-\u0A7F]+$/u.test(trimmed)) {
+      return [{ gurmukhi: trimmed.normalize('NFC'), transliteration: '', note: 'Direct Gurmukhi query' }];
+    }
+
+    const fixture = phoneticCandidates[trimmed.toLowerCase()];
+    if (fixture) return fixture;
+    const db = await this.db();
+    const result = await db.query(
+      `SELECT DISTINCT written_form AS gurmukhi, COALESCE(transliteration, '') AS transliteration,
+              relation_type AS note
+       FROM term_form WHERE lower(transliteration) = lower(?) ORDER BY written_form`,
+      [trimmed]
+    );
+    return (result.values ?? []) as SearchCandidate[];
+  }
+
+  async exactWordStats(gurmukhi: string, sourceWorkId = 'source:G'): Promise<WordStats> {
+    const db = await this.db();
+    const compare = gurmukhi.normalize('NFC');
+    const [summary, eligible, matches] = await Promise.all([
+      db.query(
+        `SELECT COUNT(*) AS rawFrequency, COUNT(DISTINCT line_id) AS distinctLines,
+                COUNT(DISTINCT text_unit_id) AS distinctUnits
+         FROM token_occurrence WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi' AND comparison_form = ?`,
+        [sourceWorkId, compare]
+      ),
+      db.query(`SELECT COUNT(*) AS count FROM token_occurrence WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi'`, [sourceWorkId]),
+      db.query(
+        `SELECT DISTINCT l.id, l.source_work_id AS sourceWorkId, l.text_unit_id AS textUnitId,
+                l.line_order AS 'order', l.ang, l.gurmukhi,
+                COALESCE(l.transliteration, '') AS transliteration,
+                COALESCE(l.contributor_id, '') AS contributorId,
+                COALESCE((SELECT preferred_name FROM contributor c WHERE c.id = l.contributor_id), '') AS contributorName
+         FROM canonical_line l JOIN token_occurrence t ON t.line_id = l.id
+         WHERE t.source_work_id = ? AND t.token_class = 'lexical_gurmukhi' AND t.comparison_form = ?
+         ORDER BY l.source_work_id, l.ang, l.line_order LIMIT 200`,
+        [sourceWorkId, compare]
+      )
+    ]);
+    const row = first(summary.values);
+    const raw = numberValue(row.rawFrequency);
+    const denominator = numberValue(first(eligible.values).count);
+    return {
+      query: gurmukhi,
+      verified: true,
+      rawFrequency: raw || null,
+      distinctLines: raw ? numberValue(row.distinctLines) : null,
+      distinctUnits: raw ? numberValue(row.distinctUnits) : null,
+      perTenThousand: raw && denominator ? raw / denominator * 10_000 : null,
+      matches: (matches.values ?? []) as unknown as CanonicalLine[]
+    };
+  }
+
+  async getLines(ang = 1, sourceWorkId = 'source:G'): Promise<CanonicalLine[]> {
+    const db = await this.db();
+    const result = await db.query(
+      `SELECT id, source_work_id AS sourceWorkId, text_unit_id AS textUnitId,
+              line_order AS 'order', ang, gurmukhi, COALESCE(transliteration, '') AS transliteration,
+              COALESCE(contributor_id, '') AS contributorId,
+              COALESCE((SELECT preferred_name FROM contributor c WHERE c.id = canonical_line.contributor_id), '') AS contributorName
+       FROM canonical_line WHERE source_work_id = ? AND ang = ? ORDER BY line_order LIMIT 120`, [sourceWorkId, ang]
+    );
+    const rows = (result.values ?? []) as unknown as CanonicalLine[];
+    if (!rows.length) return rows;
+    const units = [...new Set(rows.map(row => row.textUnitId))];
+    const placeholders = units.map(() => '?').join(',');
+    const layers = await db.query(
+      `SELECT id, text_unit_id AS textUnitId, content_type AS contentType, content,
+              attribution_label AS attributionLabel, mapping_status AS mappingStatus
+       FROM provider_content WHERE text_unit_id IN (${placeholders}) ORDER BY content_type`, units
+    );
+    const byUnit = new Map<string, ProviderLayer[]>();
+    for (const raw of layers.values ?? []) {
+      const layer = raw as unknown as ProviderLayer & { textUnitId: string };
+      const list = byUnit.get(layer.textUnitId) ?? [];
+      list.push(layer); byUnit.set(layer.textUnitId, list);
+    }
+    return rows.map(row => ({ ...row, providerLayers: byUnit.get(row.textUnitId) ?? [] }));
+  }
+
+  async getTextUnit(textUnitId: string): Promise<ShabadView> {
+    const db = await this.db();
+    const [unitResult, lineResult, layerResult] = await Promise.all([
+      db.query(`SELECT u.id, u.source_work_id AS sourceWorkId, COALESCE(u.title, 'Sabad') AS title,
+          COALESCE(MIN(l.contributor_id), '') AS contributorId,
+          COALESCE(MIN(c.preferred_name), 'Unknown contributor') AS contributorName,
+          COALESCE(MIN(l.ang), 1) AS firstAng, COALESCE(MAX(l.ang), 1) AS lastAng,
+          COUNT(l.id) AS lineCount, COALESCE(MIN(l.raag), 'Unclassified') AS raag
+        FROM text_unit u JOIN canonical_line l ON l.text_unit_id = u.id
+        LEFT JOIN contributor c ON c.id = l.contributor_id
+        WHERE u.id = ? GROUP BY u.id`, [textUnitId]),
+      db.query(`SELECT l.id, l.source_work_id AS sourceWorkId, l.text_unit_id AS textUnitId,
+          l.line_order AS 'order', l.ang, l.gurmukhi, COALESCE(l.transliteration, '') AS transliteration,
+          COALESCE(l.contributor_id, '') AS contributorId, COALESCE(c.preferred_name, '') AS contributorName
+        FROM canonical_line l LEFT JOIN contributor c ON c.id = l.contributor_id
+        WHERE l.text_unit_id = ? ORDER BY l.ang, l.line_order, l.id`, [textUnitId]),
+      db.query(`SELECT id, content_type AS contentType, content, attribution_label AS attributionLabel,
+          mapping_status AS mappingStatus FROM provider_content
+        WHERE text_unit_id = ? OR canonical_line_id IN (SELECT id FROM canonical_line WHERE text_unit_id = ?)
+        ORDER BY content_type, id`, [textUnitId, textUnitId])
+    ]);
+    const unit = first(unitResult.values);
+    if (!unit.id) throw new Error(`Text unit not found: ${textUnitId}`);
+    const unitLines = (lineResult.values ?? []) as unknown as CanonicalLine[];
+    return {
+      id: String(unit.id), sourceWorkId: String(unit.sourceWorkId), title: String(unit.title),
+      contributorId: String(unit.contributorId), contributorName: String(unit.contributorName),
+      firstAng: numberValue(unit.firstAng), lastAng: numberValue(unit.lastAng),
+      lineCount: numberValue(unit.lineCount), preview: unitLines[0]?.gurmukhi ?? '',
+      transliteration: unitLines[0]?.transliteration ?? '', raag: String(unit.raag), lines: unitLines,
+      providerLayers: (layerResult.values ?? []) as unknown as ProviderLayer[]
+    };
+  }
+
+  async contributorUnits(contributorId: string, sourceWorkId = 'source:G', limit = 50, offset = 0): Promise<TextUnitSummary[]> {
+    const db = await this.db();
+    const result = await db.query(`SELECT u.id, u.source_work_id AS sourceWorkId,
+        COALESCE(u.title, 'Sabad') AS title, ? AS contributorId,
+        COALESCE(c.preferred_name, 'Unknown contributor') AS contributorName,
+        MIN(l.ang) AS firstAng, MAX(l.ang) AS lastAng, COUNT(l.id) AS lineCount,
+        COALESCE(MIN(l.raag), 'Unclassified') AS raag,
+        COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS preview,
+        COALESCE((SELECT x.transliteration FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS transliteration
+      FROM text_unit u JOIN canonical_line l ON l.text_unit_id = u.id
+      LEFT JOIN contributor c ON c.id = ?
+      WHERE u.source_work_id = ? AND l.contributor_id = ?
+      GROUP BY u.id ORDER BY firstAng, u.unit_order LIMIT ? OFFSET ?`,
+      [contributorId, contributorId, sourceWorkId, contributorId, limit, offset]);
+    return (result.values ?? []).map(textUnitSummary);
+  }
+
+  async searchCorpus(query: string, sourceWorkId = 'source:G', limit = 40, mode: SearchMode = 'auto'): Promise<CorpusSearchResponse> {
+    const db = await this.db();
+    const trimmed = query.trim();
+    if (!trimmed) return { query: '', mode: 'latin', results: [], candidateForms: [] };
+    const isGurmukhi = /[\u0A00-\u0A7F]/u.test(trimmed);
+    if (mode === 'first-start' || mode === 'first-any') {
+      const field = isGurmukhi ? 'idx.initials_gurmukhi' : 'idx.initials_latin';
+      const folded = isGurmukhi ? trimmed.normalize('NFC') : latinFold(trimmed).replaceAll(' ', '');
+      const pattern = mode === 'first-start' ? `${folded}%` : `%${folded}%`;
+      const initials = await db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
+          l.source_work_id AS sourceWorkId, l.ang, l.gurmukhi,
+          COALESCE(l.transliteration, '') AS transliteration,
+          COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Sabad') AS title
+        FROM line_search_index idx JOIN canonical_line l ON l.id = idx.line_id
+        JOIN text_unit u ON u.id = l.text_unit_id LEFT JOIN contributor c ON c.id = l.contributor_id
+        WHERE l.source_work_id = ? AND ${field} LIKE ? ORDER BY l.ang, l.line_order LIMIT ?`,
+        [sourceWorkId, pattern, Math.max(limit * 4, 100)]);
+      const seen = new Set<string>();
+      const results: CorpusSearchResult[] = [];
+      for (const raw of initials.values ?? []) {
+        const row = raw as DatabaseRow; const unitId = String(row.textUnitId);
+        if (seen.has(unitId)) continue; seen.add(unitId);
+        results.push({ id: `search:initials:${String(row.lineId)}`, resultType: 'sabad', textUnitId: unitId,
+          sourceWorkId: String(row.sourceWorkId), title: String(row.title),
+          subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)} · first letters`,
+          gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
+          ang: numberValue(row.ang), contributorName: String(row.contributorName) });
+        if (results.length >= limit) break;
+      }
+      return { query: trimmed, mode: 'first-letters', results, candidateForms: [] };
+    }
+    if (mode === 'theme') return this.themeSearch(trimmed, sourceWorkId, limit);
+    const latinPatterns = phoneticPatterns(trimmed);
+    const lineSql = isGurmukhi
+      ? `l.gurmukhi LIKE ?`
+      : latinPatterns.map(() => `lower(l.transliteration) LIKE ?`).join(' OR ');
+    const lineParams = isGurmukhi ? [`%${trimmed.normalize('NFC')}%`] : latinPatterns.map(pattern => `%${pattern}%`);
+    const lineResult = await db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
+        l.source_work_id AS sourceWorkId, l.ang, l.gurmukhi,
+        COALESCE(l.transliteration, '') AS transliteration,
+        COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Sabad') AS title
+      FROM canonical_line l JOIN text_unit u ON u.id = l.text_unit_id
+      LEFT JOIN contributor c ON c.id = l.contributor_id
+      WHERE l.source_work_id = ? AND (${lineSql}) ORDER BY l.ang, l.line_order LIMIT ?`,
+      [sourceWorkId, ...lineParams, Math.max(limit * 8, 200)]);
+
+    const seenUnits = new Set<string>();
+    const candidateMap = new Map<string, SearchCandidate>();
+    const sabadResults: CorpusSearchResult[] = [];
+    for (const raw of lineResult.values ?? []) {
+      const row = raw as DatabaseRow;
+      if (!isGurmukhi && !transliterationMatches(String(row.transliteration), trimmed)) continue;
+      for (const candidate of alignedCandidates(String(row.gurmukhi), String(row.transliteration), trimmed)) {
+        candidateMap.set(candidate.gurmukhi, candidate);
+      }
+      const unitId = String(row.textUnitId);
+      if (seenUnits.has(unitId)) continue;
+      seenUnits.add(unitId);
+      sabadResults.push({ id: `search:sabad:${unitId}`, resultType: 'sabad', textUnitId: unitId,
+        sourceWorkId: String(row.sourceWorkId), title: String(row.title),
+        subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)}`,
+        gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
+        ang: numberValue(row.ang), contributorName: String(row.contributorName) });
+      if (sabadResults.length >= limit) break;
+    }
+
+    if (isGurmukhi) {
+      const forms = await db.query(`SELECT comparison_form AS gurmukhi, COUNT(*) AS frequency
+        FROM token_occurrence WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi'
+          AND comparison_form LIKE ? GROUP BY comparison_form ORDER BY frequency DESC LIMIT 12`,
+        [sourceWorkId, `${trimmed.normalize('NFC')}%`]);
+      for (const row of forms.values ?? []) candidateMap.set(String(row.gurmukhi), {
+        gurmukhi: String(row.gurmukhi), transliteration: '', note: `${numberValue(row.frequency).toLocaleString()} exact occurrences`
+      });
+    }
+
+    const englishResult = !isGurmukhi ? await db.query(`SELECT p.id, p.text_unit_id AS textUnitId,
+        p.content_type AS contentType, p.content, u.source_work_id AS sourceWorkId,
+        COALESCE(u.title, 'Analysed Sabad') AS title,
+        COALESCE(MIN(l.ang), 1) AS ang, COALESCE(MIN(c.preferred_name), '') AS contributorName,
+        COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = p.text_unit_id ORDER BY x.ang, x.line_order LIMIT 1), '') AS gurmukhi
+      FROM provider_content p JOIN text_unit u ON u.id = p.text_unit_id
+      LEFT JOIN canonical_line l ON l.text_unit_id = u.id LEFT JOIN contributor c ON c.id = l.contributor_id
+      WHERE u.source_work_id = ? AND p.content_type LIKE '%_en' AND lower(p.content) LIKE ?
+      GROUP BY p.id ORDER BY ang LIMIT ?`, [sourceWorkId, `%${trimmed.toLowerCase()}%`, limit]) : { values: [] };
+    const translationResults: CorpusSearchResult[] = (englishResult.values ?? []).map(row => ({
+      id: `search:translation:${String(row.id)}`, resultType: 'translation', textUnitId: String(row.textUnitId),
+      sourceWorkId: String(row.sourceWorkId), title: String(row.title),
+      subtitle: `${String(row.contentType).replaceAll('_', ' ')} · Ang ${numberValue(row.ang)}`,
+      gurmukhi: String(row.gurmukhi), transliteration: '', english: plainText(String(row.content)),
+      ang: numberValue(row.ang), contributorName: String(row.contributorName)
+    }));
+    return { query: trimmed, mode: isGurmukhi ? 'gurmukhi' : translationResults.length > sabadResults.length ? 'english' : 'latin',
+      results: [...sabadResults, ...translationResults].slice(0, limit), candidateForms: [...candidateMap.values()].slice(0, 12) };
+  }
+
+  async concordance(gurmukhi: string, sourceWorkId = 'source:G', limit = 50, offset = 0): Promise<ConcordancePage> {
+    const db = await this.db();
+    const compare = gurmukhi.normalize('NFC');
+    const [countResult, matchResult] = await Promise.all([
+      db.query(`SELECT COUNT(DISTINCT line_id) AS total FROM token_occurrence
+        WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi' AND comparison_form = ?`, [sourceWorkId, compare]),
+      db.query(`SELECT DISTINCT l.id, l.source_work_id AS sourceWorkId, l.text_unit_id AS textUnitId,
+          l.line_order AS 'order', l.ang, l.gurmukhi, COALESCE(l.transliteration, '') AS transliteration,
+          COALESCE(l.contributor_id, '') AS contributorId, COALESCE(c.preferred_name, '') AS contributorName
+        FROM canonical_line l JOIN token_occurrence t ON t.line_id = l.id
+        LEFT JOIN contributor c ON c.id = l.contributor_id
+        WHERE t.source_work_id = ? AND t.token_class = 'lexical_gurmukhi' AND t.comparison_form = ?
+        ORDER BY l.ang, l.line_order LIMIT ? OFFSET ?`, [sourceWorkId, compare, limit, offset])
+    ]);
+    return { total: numberValue(first(countResult.values).total), offset, limit,
+      matches: (matchResult.values ?? []) as unknown as CanonicalLine[] };
+  }
+
+  async providerCoverage(): Promise<ProviderCoverage> {
+    const db = await this.db();
+    const result = await db.query(`SELECT COUNT(*) AS totalLayers,
+        SUM(CASE WHEN text_unit_id IS NOT NULL THEN 1 ELSE 0 END) AS mappedLayers,
+        SUM(CASE WHEN text_unit_id IS NULL THEN 1 ELSE 0 END) AS unmappedLayers,
+        COUNT(DISTINCT text_unit_id) AS mappedTextUnits,
+        COUNT(DISTINCT CASE WHEN text_unit_id IS NULL THEN substr(id, 1, length(id) - length(content_type) - 1) END) AS unmappedGroups
+      FROM provider_content`);
+    const row = first(result.values);
+    return { totalLayers: numberValue(row.totalLayers), mappedLayers: numberValue(row.mappedLayers),
+      unmappedLayers: numberValue(row.unmappedLayers), mappedTextUnits: numberValue(row.mappedTextUnits),
+      unmappedGroups: numberValue(row.unmappedGroups) };
+  }
+
+  async unmappedProviderAnalyses(limit = 20, offset = 0): Promise<ProviderAnalysis[]> {
+    const db = await this.db();
+    const groupsResult = await db.query(`SELECT substr(id, 1, length(id) - length(content_type) - 1) AS groupId,
+        MIN(mapping_status) AS mappingStatus FROM provider_content
+      WHERE text_unit_id IS NULL GROUP BY groupId ORDER BY groupId LIMIT ? OFFSET ?`, [limit, offset]);
+    const groups = (groupsResult.values ?? []).map(row => ({ id: String(row.groupId), status: String(row.mappingStatus) }));
+    if (!groups.length) return [];
+    const placeholders = groups.map(() => '?').join(',');
+    const layerResult = await db.query(`SELECT substr(id, 1, length(id) - length(content_type) - 1) AS groupId,
+        id, content_type AS contentType, content, attribution_label AS attributionLabel,
+        mapping_status AS mappingStatus FROM provider_content
+      WHERE substr(id, 1, length(id) - length(content_type) - 1) IN (${placeholders})
+      ORDER BY groupId, content_type`, groups.map(group => group.id));
+    const byGroup = new Map<string, ProviderLayer[]>();
+    for (const row of layerResult.values ?? []) {
+      const groupId = String(row.groupId);
+      const list = byGroup.get(groupId) ?? [];
+      list.push({ id: String(row.id), contentType: String(row.contentType), content: String(row.content),
+        attributionLabel: String(row.attributionLabel), mappingStatus: String(row.mappingStatus) });
+      byGroup.set(groupId, list);
+    }
+    return groups.map(group => ({ id: group.id, title: providerGroupTitle(group.id), mappingStatus: group.status,
+      layers: byGroup.get(group.id) ?? [] }));
+  }
+
+  async relatedForms(gurmukhi: string, sourceWorkId = 'source:G', limit = 30): Promise<RelatedForm[]> {
+    const db = await this.db();
+    const result = await db.query(`SELECT DISTINCT related.written_form AS form,
+        related.relation_type AS relationType, glossary.provider
+      FROM term_form seed JOIN term_form related ON related.glossary_entry_id = seed.glossary_entry_id
+      JOIN glossary_entry glossary ON glossary.id = seed.glossary_entry_id
+      WHERE seed.comparison_form = ? AND related.written_form <> ? AND related.written_form <> ''
+      ORDER BY related.written_form LIMIT ?`, [gurmukhi.normalize('NFC'), gurmukhi, limit]);
+    const curated = (result.values ?? []).map(row => ({ form: String(row.form), relationType: String(row.relationType), provider: String(row.provider) }));
+    if (curated.length >= limit) return curated;
+    const base = [...gurmukhi.normalize('NFC')].slice(0, Math.max(1, [...gurmukhi].length - 1)).join('');
+    const suggestions = await db.query(`SELECT comparison_form AS form, COUNT(*) AS frequency
+      FROM token_occurrence WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi'
+        AND comparison_form LIKE ? AND comparison_form <> ?
+      GROUP BY comparison_form ORDER BY frequency DESC LIMIT ?`, [sourceWorkId, `${base}%`, gurmukhi, limit - curated.length]);
+    const seen = new Set(curated.map(row => row.form));
+    return [...curated, ...(suggestions.values ?? []).flatMap(row => {
+      const form = String(row.form);
+      if (seen.has(form)) return [];
+      return [{ form, relationType: `unreviewed source-prefix candidate · ${numberValue(row.frequency).toLocaleString()} occurrences`, provider: 'BaniDB analytical index' }];
+    })];
+  }
+
+  async groupedFrequency(forms: string[], sourceWorkId = 'source:G'): Promise<GroupedFrequency> {
+    const uniqueForms = [...new Set(forms.map(form => form.normalize('NFC')).filter(Boolean))];
+    if (!uniqueForms.length) return { forms: [], totalFrequency: 0, distinctLines: 0, distinctUnits: 0 };
+    const db = await this.db();
+    const placeholders = uniqueForms.map(() => '?').join(',');
+    const [componentResult, totalResult] = await Promise.all([
+      db.query(`SELECT comparison_form AS form, COUNT(*) AS frequency FROM token_occurrence
+        WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi' AND comparison_form IN (${placeholders})
+        GROUP BY comparison_form ORDER BY frequency DESC`, [sourceWorkId, ...uniqueForms]),
+      db.query(`SELECT COUNT(*) AS totalFrequency, COUNT(DISTINCT line_id) AS distinctLines,
+          COUNT(DISTINCT text_unit_id) AS distinctUnits FROM token_occurrence
+        WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi' AND comparison_form IN (${placeholders})`,
+        [sourceWorkId, ...uniqueForms])
+    ]);
+    const counts = new Map((componentResult.values ?? []).map(row => [String(row.form), numberValue(row.frequency)]));
+    const total = first(totalResult.values);
+    return { forms: uniqueForms.map(form => ({ form, frequency: counts.get(form) ?? 0 })),
+      totalFrequency: numberValue(total.totalFrequency), distinctLines: numberValue(total.distinctLines),
+      distinctUnits: numberValue(total.distinctUnits) };
+  }
+
+  async raagSummaries(sourceWorkId = 'source:G'): Promise<RaagSummary[]> {
+    const db = await this.db();
+    const result = await db.query(`SELECT COALESCE(raag_id, raag) AS id, raag AS name,
+        COUNT(DISTINCT text_unit_id) AS unitCount, COUNT(id) AS lineCount
+      FROM canonical_line WHERE source_work_id = ? AND raag IS NOT NULL AND raag <> '' AND raag <> 'No Raag'
+      GROUP BY raag_id, raag ORDER BY MIN(ang), raag`, [sourceWorkId]);
+    return (result.values ?? []).map(row => ({ id: String(row.id), name: String(row.name),
+      unitCount: numberValue(row.unitCount), lineCount: numberValue(row.lineCount) }));
+  }
+
+  async raagContributorSummaries(raag: string, sourceWorkId = 'source:G'): Promise<RaagContributorSummary[]> {
+    const db = await this.db();
+    const result = await db.query(`SELECT c.id, c.preferred_name AS name,
+        COUNT(DISTINCT l.text_unit_id) AS unitCount
+      FROM canonical_line l JOIN contributor c ON c.id = l.contributor_id
+      WHERE l.source_work_id = ? AND l.raag = ? GROUP BY c.id
+      ORDER BY c.preferred_name COLLATE NOCASE`, [sourceWorkId, raag]);
+    return (result.values ?? []).map(row => ({ id: String(row.id), name: String(row.name), unitCount: numberValue(row.unitCount) }));
+  }
+
+  async raagUnits(raag: string, sourceWorkId = 'source:G', limit = 50, offset = 0, contributorId?: string): Promise<TextUnitSummary[]> {
+    const db = await this.db();
+    const result = await db.query(`SELECT u.id, u.source_work_id AS sourceWorkId,
+        COALESCE(u.title, 'Sabad') AS title, COALESCE(MIN(l.contributor_id), '') AS contributorId,
+        COALESCE(MIN(c.preferred_name), 'Unknown contributor') AS contributorName,
+        MIN(l.ang) AS firstAng, MAX(l.ang) AS lastAng, COUNT(l.id) AS lineCount,
+        COALESCE(MIN(l.raag), 'Unclassified') AS raag,
+        COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS preview,
+        COALESCE((SELECT x.transliteration FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS transliteration
+      FROM text_unit u JOIN canonical_line l ON l.text_unit_id = u.id
+      LEFT JOIN contributor c ON c.id = l.contributor_id
+      WHERE u.source_work_id = ? AND l.raag = ? ${contributorId ? 'AND l.contributor_id = ?' : ''}
+      GROUP BY u.id ORDER BY firstAng, u.unit_order LIMIT ? OFFSET ?`,
+      contributorId ? [sourceWorkId, raag, contributorId, limit, offset] : [sourceWorkId, raag, limit, offset]);
+    return (result.values ?? []).map(textUnitSummary);
+  }
+
+  async namedBanis(sourceWorkId = 'source:G'): Promise<BaniSummary[]> {
+    const db = await this.db();
+    const result = await db.query(`SELECT id, token, source_work_id AS sourceWorkId, gurmukhi,
+      COALESCE(transliteration, '') AS transliteration, verse_count AS verseCount,
+      attribution_label AS attributionLabel FROM bani_collection
+      WHERE source_work_id = ? ORDER BY upstream_id`, [sourceWorkId]);
+    return (result.values ?? []).map(row => ({ id: String(row.id), token: String(row.token),
+      sourceWorkId: String(row.sourceWorkId), gurmukhi: String(row.gurmukhi),
+      transliteration: String(row.transliteration), verseCount: numberValue(row.verseCount),
+      attributionLabel: String(row.attributionLabel) }));
+  }
+
+  async getBani(baniId: string): Promise<BaniView> {
+    const db = await this.db();
+    const [summaryResult, linesResult] = await Promise.all([
+      db.query(`SELECT id, token, source_work_id AS sourceWorkId, gurmukhi,
+        COALESCE(transliteration, '') AS transliteration, verse_count AS verseCount,
+        attribution_label AS attributionLabel FROM bani_collection WHERE id = ?`, [baniId]),
+      db.query(`SELECT line_order AS 'order', header_level AS headerLevel,
+        paragraph_number AS paragraphNumber, gurmukhi,
+        COALESCE(transliteration, '') AS transliteration FROM bani_collection_line
+        WHERE bani_id = ? ORDER BY line_order`, [baniId])
+    ]);
+    const row = first(summaryResult.values);
+    if (!row.id) throw new Error(`Named Bani not found: ${baniId}`);
+    return { id: String(row.id), token: String(row.token), sourceWorkId: String(row.sourceWorkId),
+      gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration),
+      verseCount: numberValue(row.verseCount), attributionLabel: String(row.attributionLabel),
+      lines: (linesResult.values ?? []).map(line => ({ order: numberValue(line.order),
+        headerLevel: numberValue(line.headerLevel), paragraphNumber: line.paragraphNumber == null ? null : numberValue(line.paragraphNumber),
+        gurmukhi: String(line.gurmukhi), transliteration: String(line.transliteration) })) };
+  }
+
+  async sources(): Promise<SourceWorkOption[]> {
+    const db = await this.db();
+    const result = await db.query(`SELECT s.id, s.title, COALESCE(MAX(l.ang), 1) AS maxAng FROM source_work s LEFT JOIN canonical_line l ON l.source_work_id = s.id GROUP BY s.id ORDER BY CASE s.id WHEN 'source:G' THEN 0 ELSE 1 END, s.title`);
+    return (result.values ?? []).map(row => ({ id: String(row.id), title: String(row.title), maxAng: numberValue(row.maxAng) }));
+  }
+
+  async corpusInfo(): Promise<CorpusInfo> {
+    const db = await this.db();
+    const metadata = await db.query(`SELECT key, value FROM metadata`);
+    const values = new Map((metadata.values ?? []).map(row => [String(row.key), String(row.value)]));
+    const counts = await db.query(`SELECT (SELECT COUNT(*) FROM canonical_line) AS lineCount, (SELECT COUNT(*) FROM token_occurrence) AS occurrenceCount`);
+    const row = first(counts.values);
+    return { buildKind: values.get('build_kind') ?? 'unknown', corpusReleaseId: values.get('corpus_release_id') ?? '', providerReleaseId: values.get('provider_release_id') ?? '', lineCount: numberValue(row.lineCount), occurrenceCount: numberValue(row.occurrenceCount) };
+  }
+
+  async rankedForms(limit = 30, sourceWorkId = 'source:G'): Promise<RankedForm[]> {
+    const db = await this.db();
+    const result = await db.query(`SELECT exact_form AS form, COUNT(*) AS frequency, COUNT(DISTINCT line_id) AS distinctLines FROM token_occurrence WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi' GROUP BY exact_form ORDER BY frequency DESC, exact_form LIMIT ?`, [sourceWorkId, limit]);
+    return (result.values ?? []).map(row => ({ form: String(row.form), frequency: numberValue(row.frequency), distinctLines: numberValue(row.distinctLines) }));
+  }
+
+  async contributorSummaries(limit = 1000, sourceWorkId = 'source:G'): Promise<ContributorSummary[]> {
+    const db = await this.db();
+    const result = await db.query(`SELECT c.id, c.preferred_name AS name, c.contributor_type AS type, COUNT(DISTINCT l.text_unit_id) AS unitCount, COUNT(l.id) AS lineCount FROM contributor c JOIN canonical_line l ON l.contributor_id = c.id WHERE l.source_work_id = ? GROUP BY c.id ORDER BY c.preferred_name COLLATE NOCASE LIMIT ?`, [sourceWorkId, limit]);
+    return (result.values ?? []).map(row => ({ id: String(row.id), name: String(row.name), type: String(row.type), unitCount: numberValue(row.unitCount), lineCount: numberValue(row.lineCount) }));
+  }
+
+  async glossary(query: string, limit = 20): Promise<GlossaryResult[]> {
+    const db = await this.db();
+    const normal = query.trim().normalize('NFC');
+    if (!normal) return [];
+    const result = await db.query(`SELECT DISTINCT g.id, g.headword, g.content, g.provider, g.review_status AS reviewStatus FROM glossary_entry g LEFT JOIN term_form t ON t.glossary_entry_id = g.id WHERE g.headword = ? OR t.comparison_form = ? OR lower(t.transliteration) = lower(?) LIMIT ?`, [normal, normal, normal, limit]);
+    return (result.values ?? []).map(row => ({ id: String(row.id), headword: String(row.headword), content: String(row.content), provider: String(row.provider), reviewStatus: String(row.reviewStatus) }));
+  }
+
+  private async themeSearch(query: string, sourceWorkId: string, limit: number): Promise<CorpusSearchResponse> {
+    const db = await this.db();
+    const key = latinFold(query);
+    const curated: Record<string, string[]> = {
+      compassion: ['compassion', 'compassionate', 'mercy'],
+      contentment: ['contentment', 'contented', 'satisfaction'],
+      calmness: ['calm', 'stillness', 'peace'],
+      humility: ['humility', 'humble'],
+      courage: ['courage', 'fearless']
+    };
+    const terms = curated[key] ?? [key];
+    const clauses = terms.map(() => `lower(p.content) LIKE ?`).join(' OR ');
+    const result = await db.query(`SELECT p.id, p.text_unit_id AS textUnitId, p.content_type AS contentType,
+        p.content, u.source_work_id AS sourceWorkId, COALESCE(u.title, 'Analysed Sabad') AS title,
+        COALESCE(MIN(l.ang), 1) AS ang, COALESCE(MIN(c.preferred_name), '') AS contributorName,
+        COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = p.text_unit_id
+          ORDER BY x.ang, x.line_order LIMIT 1), '') AS gurmukhi
+      FROM provider_content p JOIN text_unit u ON u.id = p.text_unit_id
+      LEFT JOIN canonical_line l ON l.text_unit_id = u.id LEFT JOIN contributor c ON c.id = l.contributor_id
+      WHERE u.source_work_id = ? AND p.content_type IN
+        ('literal_translation_en','interpretive_transcreation_en','commentary_en','poetical_dimension_en')
+        AND (${clauses}) GROUP BY p.id ORDER BY ang LIMIT ?`,
+      [sourceWorkId, ...terms.map(term => `%${term}%`), limit]);
+    const results: CorpusSearchResult[] = (result.values ?? []).map(row => ({
+      id: `search:theme:${String(row.id)}`, resultType: 'theme', textUnitId: String(row.textUnitId),
+      sourceWorkId: String(row.sourceWorkId), title: String(row.title),
+      subtitle: `Experimental theme · TGGSP ${String(row.contentType).replaceAll('_', ' ')} · Ang ${numberValue(row.ang)}`,
+      gurmukhi: String(row.gurmukhi), transliteration: '', english: plainText(String(row.content)),
+      ang: numberValue(row.ang), contributorName: String(row.contributorName)
+    }));
+    return { query, mode: 'theme', results, candidateForms: [] };
+  }
+
+  async close(): Promise<void> {
+    if (!this.connection) return;
+    const db = await this.connection;
+    await db.close();
+    await this.sqlite.closeConnection(MOBILE_DATABASE_NAME, false);
+    this.connection = null;
+  }
+
+  private db(): Promise<SQLiteDBConnection> {
+    if (!this.connection) this.connection = this.open();
+    return this.connection;
+  }
+
+  private async open(): Promise<SQLiteDBConnection> {
+    const installed = await this.sqlite.isDatabase(MOBILE_DATABASE_NAME);
+    if (!installed.result) {
+      await this.sqlite.copyFromAssets(false);
+    }
+    const consistency = await this.sqlite.checkConnectionsConsistency();
+    const existing = await this.sqlite.isConnection(MOBILE_DATABASE_NAME, false);
+    const db = consistency.result && existing.result
+      ? await this.sqlite.retrieveConnection(MOBILE_DATABASE_NAME, false)
+      : await this.sqlite.createConnection(MOBILE_DATABASE_NAME, false, 'no-encryption', MOBILE_SCHEMA_VERSION, false);
+    await db.open();
+    await this.ensureSchemaV2(db);
+    await db.execute(MOBILE_SCHEMA_SQL, true);
+    await db.run(`INSERT OR REPLACE INTO metadata(key, value) VALUES (?, ?)`, ['schema_version', String(MOBILE_SCHEMA_VERSION)]);
+    await this.seedTechnicalFixture(db);
+    return db;
+  }
+
+  private async ensureSchemaV2(db: SQLiteDBConnection): Promise<void> {
+    const columns = await db.query(`PRAGMA table_info(canonical_line)`);
+    const names = new Set((columns.values ?? []).map(row => String(row.name)));
+    if (!names.has('raag_id')) await db.execute(`ALTER TABLE canonical_line ADD COLUMN raag_id TEXT`, true);
+    if (!names.has('raag')) await db.execute(`ALTER TABLE canonical_line ADD COLUMN raag TEXT`, true);
+  }
+
+  private async seedTechnicalFixture(db: SQLiteDBConnection): Promise<void> {
+    const existing = await db.query(`SELECT COUNT(*) AS count FROM canonical_line`);
+    if (numberValue(first(existing.values).count) > 0) return;
+    await db.run(`INSERT OR IGNORE INTO source_work(id, upstream_id, title, profile, corpus_release_id) VALUES (?, ?, ?, ?, ?)`,
+      ['source:G', 'G', 'Guru Granth Sahib', 'verse_corpus', 'fixture-corpus-2026-07-12']);
+    await db.run(`INSERT OR IGNORE INTO contributor(id, preferred_name, contributor_type) VALUES (?, ?, ?)`,
+      ['contributor:guru-nanak-sahib', 'Guru Nanak Sahib', 'guru']);
+    await db.run(`INSERT OR IGNORE INTO text_unit(id, upstream_id, source_work_id, parent_id, unit_type, unit_order, title, review_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['unit:jap', 'fixture-jap', 'source:G', null, 'bani', 1, 'Jap', 'fixture']);
+    await db.run(`INSERT OR IGNORE INTO text_unit(id, upstream_id, source_work_id, parent_id, unit_type, unit_order, title, review_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['unit:jap:pauri-8', 'fixture-jap-p8', 'source:G', 'unit:jap', 'pauri', 8, 'Pauri 8', 'fixture']);
+
+    for (const line of lines) {
+      await db.run(
+        `INSERT OR IGNORE INTO canonical_line(id, upstream_id, source_work_id, text_unit_id, contributor_id,
+          line_order, ang, line_class, gurmukhi, transliteration) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [line.id, line.id, line.sourceWorkId, line.textUnitId, line.contributorId, line.order, line.ang, 'canonical_verse', line.gurmukhi, line.transliteration]
+      );
+      const tokens = [...line.gurmukhi.matchAll(/[\p{L}\p{M}]+|[^\s]/gu)];
+      for (const [position, match] of tokens.entries()) {
+        const exact = match[0];
+        const lexical = /^[\u0A00-\u0A7F]+$/u.test(exact) && /[\p{L}\p{M}]/u.test(exact);
+        await db.run(
+          `INSERT OR IGNORE INTO token_occurrence(id, line_id, text_unit_id, source_work_id, token_position,
+            exact_form, comparison_form, token_class, start_utf16, end_utf16, analysis_release_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [`occurrence:${line.id}:${position}`, line.id, line.textUnitId, line.sourceWorkId, position, exact,
+            exact.normalize('NFC'), lexical ? 'lexical_gurmukhi' : 'punctuation', match.index, match.index + exact.length,
+            'analysis:fixture-mobile']
+        );
+      }
+    }
+    for (const candidates of Object.values(phoneticCandidates)) {
+      for (const candidate of candidates) {
+        await db.run(
+          `INSERT OR IGNORE INTO term_form(id, glossary_entry_id, written_form, comparison_form, transliteration, relation_type)
+           VALUES (?, NULL, ?, ?, ?, ?)`,
+          [`term:${candidate.gurmukhi}`, candidate.gurmukhi, candidate.gurmukhi.normalize('NFC'), candidate.transliteration, candidate.note]
+        );
+      }
+    }
+    await db.run(`INSERT OR REPLACE INTO metadata(key, value) VALUES ('fixture_seeded', 'true')`);
+    await db.run(`INSERT OR REPLACE INTO metadata(key, value) VALUES ('fixture_notice', 'Technical fixture only; not a corpus release')`);
+  }
+}
+
+function first(values: DatabaseRow[] | undefined): DatabaseRow {
+  return values?.[0] ?? {};
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === 'number' ? value : Number(value ?? 0);
+}
+
+function textUnitSummary(row: DatabaseRow): TextUnitSummary {
+  return { id: String(row.id), sourceWorkId: String(row.sourceWorkId), title: String(row.title),
+    contributorId: String(row.contributorId), contributorName: String(row.contributorName),
+    firstAng: numberValue(row.firstAng), lastAng: numberValue(row.lastAng), lineCount: numberValue(row.lineCount),
+    preview: String(row.preview), transliteration: String(row.transliteration), raag: String(row.raag ?? 'Unclassified') };
+}
+
+function phoneticPatterns(query: string): string[] {
+  const raw = query.toLowerCase().trim();
+  const patterns = new Set([raw]);
+  if (!raw.includes('aa')) {
+    const expanded = raw.replace(/a/u, 'aa');
+    patterns.add(expanded);
+    patterns.add(expanded.replaceAll('aa', 'ā'));
+  }
+  patterns.add(raw.replaceAll('aa', 'ā'));
+  patterns.add(raw.replaceAll('ee', 'ī'));
+  patterns.add(raw.replaceAll('oo', 'ū'));
+  return [...patterns].filter(Boolean);
+}
+
+function latinFold(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLowerCase()
+    .replace(/\(([a-z])\)/gu, '$1').replace(/[^a-z\s]/gu, ' ')
+    .replace(/([aeiou])\1+/gu, '$1').replace(/\s+/gu, ' ').trim();
+}
+
+function foldedWord(value: string): string {
+  return latinFold(value).replace(/[uia]$/u, '');
+}
+
+function transliterationMatches(transliteration: string, query: string): boolean {
+  const foldedQuery = latinFold(query);
+  if (foldedQuery.includes(' ')) return latinFold(transliteration).includes(foldedQuery);
+  const wanted = foldedWord(foldedQuery);
+  return latinFold(transliteration).split(' ').some(token => foldedWord(token) === wanted);
+}
+
+function alignedCandidates(gurmukhi: string, transliteration: string, query: string): SearchCandidate[] {
+  const gurmukhiTokens = Array.from(gurmukhi.matchAll(/[\p{L}\p{M}]+/gu), match => match[0]);
+  const latinTokens = latinFold(transliteration).split(' ').filter(Boolean);
+  if (gurmukhiTokens.length !== latinTokens.length) return [];
+  const wanted = foldedWord(query);
+  return latinTokens.flatMap((token, index) => foldedWord(token) === wanted ? [{
+    gurmukhi: gurmukhiTokens[index], transliteration: token, note: 'Phonetic candidate; exact forms counted separately'
+  }] : []);
+}
+
+function plainText(content: string): string {
+  return content.replace(/<[^>]*>/gu, ' ').replace(/&nbsp;/gu, ' ').replace(/\s+/gu, ' ').trim();
+}
+
+function providerGroupTitle(id: string): string {
+  const parts = id.split(':');
+  return `${parts[1] ?? 'TGGSP'} · subsection ${parts[2] ?? 'unknown'} · record ${parts[3] ?? 'unknown'}`;
+}
