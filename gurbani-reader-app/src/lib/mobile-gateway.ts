@@ -1,10 +1,12 @@
 import { Capacitor } from '@capacitor/core';
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { lines, phoneticCandidates } from '../data/fixture';
-import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResult, CorpusSearchResponse, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, ProviderLayer, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
+import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResult, CorpusSearchResponse, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, ProviderLayer, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
 import { MOBILE_DATABASE_NAME, MOBILE_SCHEMA_SQL, MOBILE_SCHEMA_VERSION } from './mobile-schema';
 
 type DatabaseRow = Record<string, unknown>;
+const BHAI_GURDAS_CONTRIBUTORS = ['contributor:banidb:22', 'contributor:banidb:49'];
+const COMBINED_BHAI_GURDAS_ID = 'contributor:combined:bhai-gurdas';
 
 export class MobileCorpusGateway {
   private readonly sqlite = new SQLiteConnection(CapacitorSQLite);
@@ -33,17 +35,20 @@ export class MobileCorpusGateway {
     return (result.values ?? []) as SearchCandidate[];
   }
 
-  async exactWordStats(gurmukhi: string, sourceWorkId = 'source:G'): Promise<WordStats> {
+  async exactWordStats(gurmukhi: string, filters: SearchFilters = defaultSearchFilters()): Promise<WordStats> {
     const db = await this.db();
     const compare = gurmukhi.normalize('NFC');
+    const facets = searchFacetSql(filters, 'l');
     const [summary, eligible, matches] = await Promise.all([
       db.query(
         `SELECT COUNT(*) AS rawFrequency, COUNT(DISTINCT line_id) AS distinctLines,
                 COUNT(DISTINCT text_unit_id) AS distinctUnits
-         FROM token_occurrence WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi' AND comparison_form = ?`,
-        [sourceWorkId, compare]
+         FROM token_occurrence t JOIN canonical_line l ON l.id = t.line_id
+         WHERE t.token_class = 'lexical_gurmukhi' AND t.comparison_form = ? ${facets.clause}`,
+        [compare, ...facets.params]
       ),
-      db.query(`SELECT COUNT(*) AS count FROM token_occurrence WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi'`, [sourceWorkId]),
+      db.query(`SELECT COUNT(*) AS count FROM token_occurrence t JOIN canonical_line l ON l.id = t.line_id
+        WHERE t.token_class = 'lexical_gurmukhi' ${facets.clause}`, [...facets.params]),
       db.query(
         `SELECT DISTINCT l.id, l.source_work_id AS sourceWorkId, l.text_unit_id AS textUnitId,
                 l.line_order AS 'order', l.ang, l.gurmukhi,
@@ -51,9 +56,9 @@ export class MobileCorpusGateway {
                 COALESCE(l.contributor_id, '') AS contributorId,
                 COALESCE((SELECT preferred_name FROM contributor c WHERE c.id = l.contributor_id), '') AS contributorName
          FROM canonical_line l JOIN token_occurrence t ON t.line_id = l.id
-         WHERE t.source_work_id = ? AND t.token_class = 'lexical_gurmukhi' AND t.comparison_form = ?
+         WHERE t.token_class = 'lexical_gurmukhi' AND t.comparison_form = ? ${facets.clause}
          ORDER BY l.source_work_id, l.ang, l.line_order LIMIT 200`,
-        [sourceWorkId, compare]
+        [compare, ...facets.params]
       )
     ]);
     const row = first(summary.values);
@@ -133,53 +138,31 @@ export class MobileCorpusGateway {
 
   async contributorUnits(contributorId: string, sourceWorkId = 'source:G', limit = 50, offset = 0): Promise<TextUnitSummary[]> {
     const db = await this.db();
+    const contributorClause = contributorId === COMBINED_BHAI_GURDAS_ID
+      ? `l.contributor_id IN (${BHAI_GURDAS_CONTRIBUTORS.map(() => '?').join(',')})` : 'l.contributor_id = ?';
+    const contributorParams = contributorId === COMBINED_BHAI_GURDAS_ID ? BHAI_GURDAS_CONTRIBUTORS : [contributorId];
     const result = await db.query(`SELECT u.id, u.source_work_id AS sourceWorkId,
         COALESCE(u.title, 'Sabad') AS title, ? AS contributorId,
-        COALESCE(c.preferred_name, 'Unknown contributor') AS contributorName,
+        ${contributorId === COMBINED_BHAI_GURDAS_ID ? "'Bhai Gurdas Ji'" : "COALESCE(c.preferred_name, 'Unknown contributor')"} AS contributorName,
         MIN(l.ang) AS firstAng, MAX(l.ang) AS lastAng, COUNT(l.id) AS lineCount,
         COALESCE(MIN(l.raag), 'Unclassified') AS raag,
         COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS preview,
         COALESCE((SELECT x.transliteration FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS transliteration
       FROM text_unit u JOIN canonical_line l ON l.text_unit_id = u.id
       LEFT JOIN contributor c ON c.id = ?
-      WHERE u.source_work_id = ? AND l.contributor_id = ?
+      WHERE u.source_work_id = ? AND ${contributorClause}
       GROUP BY u.id ORDER BY firstAng, u.unit_order LIMIT ? OFFSET ?`,
-      [contributorId, contributorId, sourceWorkId, contributorId, limit, offset]);
+      [contributorId, contributorId, sourceWorkId, ...contributorParams, limit, offset]);
     return (result.values ?? []).map(textUnitSummary);
   }
 
-  async searchCorpus(query: string, sourceWorkId = 'source:G', limit = 40, mode: SearchMode = 'auto'): Promise<CorpusSearchResponse> {
+  async searchCorpus(query: string, filters: SearchFilters = defaultSearchFilters(), limit = 60, mode: SearchMode = 'auto'): Promise<CorpusSearchResponse> {
     const db = await this.db();
     const trimmed = query.trim();
-    if (!trimmed) return { query: '', mode: 'latin', results: [], candidateForms: [] };
+    if (!trimmed) return filters.tggspOnly ? this.tggspAvailableSearch(filters, limit) : { query: '', mode: 'latin', results: [], candidateForms: [] };
     const isGurmukhi = /[\u0A00-\u0A7F]/u.test(trimmed);
-    if (mode === 'first-start' || mode === 'first-any') {
-      const field = isGurmukhi ? 'idx.initials_gurmukhi' : 'idx.initials_latin';
-      const folded = isGurmukhi ? trimmed.normalize('NFC') : latinFold(trimmed).replaceAll(' ', '');
-      const pattern = mode === 'first-start' ? `${folded}%` : `%${folded}%`;
-      const initials = await db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
-          l.source_work_id AS sourceWorkId, l.ang, l.gurmukhi,
-          COALESCE(l.transliteration, '') AS transliteration,
-          COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Sabad') AS title
-        FROM line_search_index idx JOIN canonical_line l ON l.id = idx.line_id
-        JOIN text_unit u ON u.id = l.text_unit_id LEFT JOIN contributor c ON c.id = l.contributor_id
-        WHERE l.source_work_id = ? AND ${field} LIKE ? ORDER BY l.ang, l.line_order LIMIT ?`,
-        [sourceWorkId, pattern, Math.max(limit * 4, 100)]);
-      const seen = new Set<string>();
-      const results: CorpusSearchResult[] = [];
-      for (const raw of initials.values ?? []) {
-        const row = raw as DatabaseRow; const unitId = String(row.textUnitId);
-        if (seen.has(unitId)) continue; seen.add(unitId);
-        results.push({ id: `search:initials:${String(row.lineId)}`, resultType: 'sabad', textUnitId: unitId,
-          sourceWorkId: String(row.sourceWorkId), title: String(row.title),
-          subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)} · first letters`,
-          gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
-          ang: numberValue(row.ang), contributorName: String(row.contributorName) });
-        if (results.length >= limit) break;
-      }
-      return { query: trimmed, mode: 'first-letters', results, candidateForms: [] };
-    }
-    if (mode === 'theme') return this.themeSearch(trimmed, sourceWorkId, limit);
+    if (mode === 'theme') return this.themeSearch(trimmed, filters, limit);
+    const facets = searchFacetSql(filters, 'l');
     const latinPatterns = phoneticPatterns(trimmed);
     const lineSql = isGurmukhi
       ? `l.gurmukhi LIKE ?`
@@ -188,11 +171,12 @@ export class MobileCorpusGateway {
     const lineResult = await db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
         l.source_work_id AS sourceWorkId, l.ang, l.gurmukhi,
         COALESCE(l.transliteration, '') AS transliteration,
-        COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Sabad') AS title
+        COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Sabad') AS title,
+        COALESCE((SELECT group_concat(DISTINCT pc.content_type) FROM provider_content pc WHERE pc.text_unit_id = l.text_unit_id), '') AS providerTypes
       FROM canonical_line l JOIN text_unit u ON u.id = l.text_unit_id
       LEFT JOIN contributor c ON c.id = l.contributor_id
-      WHERE l.source_work_id = ? AND (${lineSql}) ORDER BY l.ang, l.line_order LIMIT ?`,
-      [sourceWorkId, ...lineParams, Math.max(limit * 8, 200)]);
+      WHERE (${lineSql}) ${facets.clause} ORDER BY CASE l.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END, l.ang, l.line_order LIMIT ?`,
+      [...lineParams, ...facets.params, Math.max(limit * 8, 240)]);
 
     const seenUnits = new Set<string>();
     const candidateMap = new Map<string, SearchCandidate>();
@@ -210,53 +194,87 @@ export class MobileCorpusGateway {
         sourceWorkId: String(row.sourceWorkId), title: String(row.title),
         subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)}`,
         gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
-        ang: numberValue(row.ang), contributorName: String(row.contributorName) });
+        ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: String(row.lineId),
+        matchKind: 'text', providerContentTypes: splitProviderTypes(row.providerTypes) });
       if (sabadResults.length >= limit) break;
     }
 
+    const initialField = isGurmukhi ? 'idx.initials_gurmukhi' : 'idx.initials_latin';
+    const initialQuery = isGurmukhi ? trimmed.normalize('NFC').replaceAll(' ', '') : latinFold(trimmed).replaceAll(' ', '');
+    const initialResult = initialQuery ? await db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
+        l.source_work_id AS sourceWorkId, l.ang, l.gurmukhi, COALESCE(l.transliteration, '') AS transliteration,
+        COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Sabad') AS title,
+        COALESCE((SELECT group_concat(DISTINCT pc.content_type) FROM provider_content pc WHERE pc.text_unit_id = l.text_unit_id), '') AS providerTypes
+      FROM line_search_index idx JOIN canonical_line l ON l.id = idx.line_id
+      JOIN text_unit u ON u.id = l.text_unit_id LEFT JOIN contributor c ON c.id = l.contributor_id
+      WHERE (${initialField} LIKE ? OR ${initialField} LIKE ?) ${facets.clause}
+      ORDER BY CASE l.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END, l.ang, l.line_order LIMIT ?`,
+      [`${initialQuery}%`, `%${initialQuery}%`, ...facets.params, limit]) : { values: [] };
+    const initialResults: CorpusSearchResult[] = [];
+    for (const raw of initialResult.values ?? []) {
+      const row = raw as DatabaseRow; const unitId = String(row.textUnitId);
+      if (seenUnits.has(unitId)) continue; seenUnits.add(unitId);
+      initialResults.push({ id: `search:initials:${String(row.lineId)}`, resultType: 'sabad', textUnitId: unitId,
+        sourceWorkId: String(row.sourceWorkId), title: String(row.title),
+        subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)} · first-letter match`,
+        gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
+        ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: String(row.lineId),
+        matchKind: 'first-letters', providerContentTypes: splitProviderTypes(row.providerTypes) });
+    }
+
     if (isGurmukhi) {
-      const forms = await db.query(`SELECT comparison_form AS gurmukhi, COUNT(*) AS frequency
-        FROM token_occurrence WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi'
-          AND comparison_form LIKE ? GROUP BY comparison_form ORDER BY frequency DESC LIMIT 12`,
-        [sourceWorkId, `${trimmed.normalize('NFC')}%`]);
+      const forms = await db.query(`SELECT t.comparison_form AS gurmukhi, COUNT(*) AS frequency
+        FROM token_occurrence t JOIN canonical_line l ON l.id = t.line_id
+        WHERE t.token_class = 'lexical_gurmukhi' AND t.comparison_form LIKE ? ${facets.clause}
+        GROUP BY t.comparison_form ORDER BY frequency DESC LIMIT 12`,
+        [`${trimmed.normalize('NFC')}%`, ...facets.params]);
       for (const row of forms.values ?? []) candidateMap.set(String(row.gurmukhi), {
         gurmukhi: String(row.gurmukhi), transliteration: '', note: `${numberValue(row.frequency).toLocaleString()} exact occurrences`
       });
     }
 
+    const providerTypeFilter = filters.providerContentTypes.length
+      ? `AND p.content_type IN (${filters.providerContentTypes.map(() => '?').join(',')})` : '';
+    const englishFacets = searchFacetSql(filters, 'l', false);
     const englishResult = !isGurmukhi ? await db.query(`SELECT p.id, p.text_unit_id AS textUnitId,
         p.content_type AS contentType, p.content, u.source_work_id AS sourceWorkId,
         COALESCE(u.title, 'Analysed Sabad') AS title,
         COALESCE(MIN(l.ang), 1) AS ang, COALESCE(MIN(c.preferred_name), '') AS contributorName,
-        COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = p.text_unit_id ORDER BY x.ang, x.line_order LIMIT 1), '') AS gurmukhi
+        COALESCE(MIN(l.id), '') AS lineId,
+        COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = p.text_unit_id ORDER BY x.ang, x.line_order LIMIT 1), '') AS gurmukhi,
+        COALESCE((SELECT group_concat(DISTINCT pc.content_type) FROM provider_content pc WHERE pc.text_unit_id = p.text_unit_id), '') AS providerTypes
       FROM provider_content p JOIN text_unit u ON u.id = p.text_unit_id
       LEFT JOIN canonical_line l ON l.text_unit_id = u.id LEFT JOIN contributor c ON c.id = l.contributor_id
-      WHERE u.source_work_id = ? AND p.content_type LIKE '%_en' AND lower(p.content) LIKE ?
-      GROUP BY p.id ORDER BY ang LIMIT ?`, [sourceWorkId, `%${trimmed.toLowerCase()}%`, limit]) : { values: [] };
+      WHERE p.content_type LIKE '%_en' AND lower(p.content) LIKE ? ${providerTypeFilter} ${englishFacets.clause}
+      GROUP BY p.id ORDER BY CASE u.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END, ang LIMIT ?`,
+      [`%${trimmed.toLowerCase()}%`, ...filters.providerContentTypes, ...englishFacets.params, limit]) : { values: [] };
     const translationResults: CorpusSearchResult[] = (englishResult.values ?? []).map(row => ({
       id: `search:translation:${String(row.id)}`, resultType: 'translation', textUnitId: String(row.textUnitId),
       sourceWorkId: String(row.sourceWorkId), title: String(row.title),
       subtitle: `${String(row.contentType).replaceAll('_', ' ')} · Ang ${numberValue(row.ang)}`,
       gurmukhi: String(row.gurmukhi), transliteration: '', english: plainText(String(row.content)),
-      ang: numberValue(row.ang), contributorName: String(row.contributorName)
+      ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: String(row.lineId),
+      matchKind: 'analysis', providerContentTypes: splitProviderTypes(row.providerTypes)
     }));
     return { query: trimmed, mode: isGurmukhi ? 'gurmukhi' : translationResults.length > sabadResults.length ? 'english' : 'latin',
-      results: [...sabadResults, ...translationResults].slice(0, limit), candidateForms: [...candidateMap.values()].slice(0, 12) };
+      results: [...sabadResults, ...initialResults, ...translationResults].slice(0, limit), candidateForms: [...candidateMap.values()].slice(0, 12) };
   }
 
-  async concordance(gurmukhi: string, sourceWorkId = 'source:G', limit = 50, offset = 0): Promise<ConcordancePage> {
+  async concordance(gurmukhi: string, filters: SearchFilters = defaultSearchFilters(), limit = 50, offset = 0): Promise<ConcordancePage> {
     const db = await this.db();
     const compare = gurmukhi.normalize('NFC');
+    const facets = searchFacetSql(filters, 'l');
     const [countResult, matchResult] = await Promise.all([
-      db.query(`SELECT COUNT(DISTINCT line_id) AS total FROM token_occurrence
-        WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi' AND comparison_form = ?`, [sourceWorkId, compare]),
+      db.query(`SELECT COUNT(DISTINCT t.line_id) AS total FROM token_occurrence t
+        JOIN canonical_line l ON l.id = t.line_id
+        WHERE t.token_class = 'lexical_gurmukhi' AND t.comparison_form = ? ${facets.clause}`, [compare, ...facets.params]),
       db.query(`SELECT DISTINCT l.id, l.source_work_id AS sourceWorkId, l.text_unit_id AS textUnitId,
           l.line_order AS 'order', l.ang, l.gurmukhi, COALESCE(l.transliteration, '') AS transliteration,
           COALESCE(l.contributor_id, '') AS contributorId, COALESCE(c.preferred_name, '') AS contributorName
         FROM canonical_line l JOIN token_occurrence t ON t.line_id = l.id
         LEFT JOIN contributor c ON c.id = l.contributor_id
-        WHERE t.source_work_id = ? AND t.token_class = 'lexical_gurmukhi' AND t.comparison_form = ?
-        ORDER BY l.ang, l.line_order LIMIT ? OFFSET ?`, [sourceWorkId, compare, limit, offset])
+        WHERE t.token_class = 'lexical_gurmukhi' AND t.comparison_form = ? ${facets.clause}
+        ORDER BY l.source_work_id, l.ang, l.line_order LIMIT ? OFFSET ?`, [compare, ...facets.params, limit, offset])
     ]);
     return { total: numberValue(first(countResult.values).total), offset, limit,
       matches: (matchResult.values ?? []) as unknown as CanonicalLine[] };
@@ -313,9 +331,9 @@ export class MobileCorpusGateway {
     if (curated.length >= limit) return curated;
     const base = [...gurmukhi.normalize('NFC')].slice(0, Math.max(1, [...gurmukhi].length - 1)).join('');
     const suggestions = await db.query(`SELECT comparison_form AS form, COUNT(*) AS frequency
-      FROM token_occurrence WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi'
+      FROM token_occurrence WHERE (? = 'all' OR source_work_id = ?) AND token_class = 'lexical_gurmukhi'
         AND comparison_form LIKE ? AND comparison_form <> ?
-      GROUP BY comparison_form ORDER BY frequency DESC LIMIT ?`, [sourceWorkId, `${base}%`, gurmukhi, limit - curated.length]);
+      GROUP BY comparison_form ORDER BY frequency DESC LIMIT ?`, [sourceWorkId, sourceWorkId, `${base}%`, gurmukhi, limit - curated.length]);
     const seen = new Set(curated.map(row => row.form));
     return [...curated, ...(suggestions.values ?? []).flatMap(row => {
       const form = String(row.form);
@@ -324,19 +342,22 @@ export class MobileCorpusGateway {
     })];
   }
 
-  async groupedFrequency(forms: string[], sourceWorkId = 'source:G'): Promise<GroupedFrequency> {
+  async groupedFrequency(forms: string[], filters: SearchFilters = defaultSearchFilters()): Promise<GroupedFrequency> {
     const uniqueForms = [...new Set(forms.map(form => form.normalize('NFC')).filter(Boolean))];
     if (!uniqueForms.length) return { forms: [], totalFrequency: 0, distinctLines: 0, distinctUnits: 0 };
     const db = await this.db();
     const placeholders = uniqueForms.map(() => '?').join(',');
+    const facets = searchFacetSql(filters, 'l');
     const [componentResult, totalResult] = await Promise.all([
-      db.query(`SELECT comparison_form AS form, COUNT(*) AS frequency FROM token_occurrence
-        WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi' AND comparison_form IN (${placeholders})
-        GROUP BY comparison_form ORDER BY frequency DESC`, [sourceWorkId, ...uniqueForms]),
-      db.query(`SELECT COUNT(*) AS totalFrequency, COUNT(DISTINCT line_id) AS distinctLines,
-          COUNT(DISTINCT text_unit_id) AS distinctUnits FROM token_occurrence
-        WHERE source_work_id = ? AND token_class = 'lexical_gurmukhi' AND comparison_form IN (${placeholders})`,
-        [sourceWorkId, ...uniqueForms])
+      db.query(`SELECT t.comparison_form AS form, COUNT(*) AS frequency FROM token_occurrence t
+        JOIN canonical_line l ON l.id = t.line_id
+        WHERE t.token_class = 'lexical_gurmukhi' AND t.comparison_form IN (${placeholders}) ${facets.clause}
+        GROUP BY t.comparison_form ORDER BY frequency DESC`, [...uniqueForms, ...facets.params]),
+      db.query(`SELECT COUNT(*) AS totalFrequency, COUNT(DISTINCT t.line_id) AS distinctLines,
+          COUNT(DISTINCT t.text_unit_id) AS distinctUnits FROM token_occurrence t
+        JOIN canonical_line l ON l.id = t.line_id
+        WHERE t.token_class = 'lexical_gurmukhi' AND t.comparison_form IN (${placeholders}) ${facets.clause}`,
+        [...uniqueForms, ...facets.params])
     ]);
     const counts = new Map((componentResult.values ?? []).map(row => [String(row.form), numberValue(row.frequency)]));
     const total = first(totalResult.values);
@@ -349,8 +370,8 @@ export class MobileCorpusGateway {
     const db = await this.db();
     const result = await db.query(`SELECT COALESCE(raag_id, raag) AS id, raag AS name,
         COUNT(DISTINCT text_unit_id) AS unitCount, COUNT(id) AS lineCount
-      FROM canonical_line WHERE source_work_id = ? AND raag IS NOT NULL AND raag <> '' AND raag <> 'No Raag'
-      GROUP BY raag_id, raag ORDER BY MIN(ang), raag`, [sourceWorkId]);
+      FROM canonical_line WHERE (? = 'all' OR source_work_id = ?) AND raag IS NOT NULL AND raag <> '' AND raag <> 'No Raag'
+      GROUP BY raag_id, raag ORDER BY MIN(ang), raag`, [sourceWorkId, sourceWorkId]);
     return (result.values ?? []).map(row => ({ id: String(row.id), name: String(row.name),
       unitCount: numberValue(row.unitCount), lineCount: numberValue(row.lineCount) }));
   }
@@ -387,7 +408,7 @@ export class MobileCorpusGateway {
     const result = await db.query(`SELECT id, token, source_work_id AS sourceWorkId, gurmukhi,
       COALESCE(transliteration, '') AS transliteration, verse_count AS verseCount,
       attribution_label AS attributionLabel FROM bani_collection
-      WHERE source_work_id = ? ORDER BY upstream_id`, [sourceWorkId]);
+      WHERE (? = 'all' OR source_work_id = ?) ORDER BY upstream_id`, [sourceWorkId, sourceWorkId]);
     return (result.values ?? []).map(row => ({ id: String(row.id), token: String(row.token),
       sourceWorkId: String(row.sourceWorkId), gurmukhi: String(row.gurmukhi),
       transliteration: String(row.transliteration), verseCount: numberValue(row.verseCount),
@@ -418,7 +439,8 @@ export class MobileCorpusGateway {
   async sources(): Promise<SourceWorkOption[]> {
     const db = await this.db();
     const result = await db.query(`SELECT s.id, s.title, COALESCE(MAX(l.ang), 1) AS maxAng FROM source_work s LEFT JOIN canonical_line l ON l.source_work_id = s.id GROUP BY s.id ORDER BY CASE s.id WHEN 'source:G' THEN 0 ELSE 1 END, s.title`);
-    return (result.values ?? []).map(row => ({ id: String(row.id), title: String(row.title), maxAng: numberValue(row.maxAng) }));
+    return (result.values ?? []).map(row => ({ id: String(row.id),
+      title: String(row.id) === 'source:B' ? 'Vaaran Bhai Gurdas Ji' : String(row.title), maxAng: numberValue(row.maxAng) }));
   }
 
   async corpusInfo(): Promise<CorpusInfo> {
@@ -438,8 +460,15 @@ export class MobileCorpusGateway {
 
   async contributorSummaries(limit = 1000, sourceWorkId = 'source:G'): Promise<ContributorSummary[]> {
     const db = await this.db();
-    const result = await db.query(`SELECT c.id, c.preferred_name AS name, c.contributor_type AS type, COUNT(DISTINCT l.text_unit_id) AS unitCount, COUNT(l.id) AS lineCount FROM contributor c JOIN canonical_line l ON l.contributor_id = c.id WHERE l.source_work_id = ? GROUP BY c.id ORDER BY c.preferred_name COLLATE NOCASE LIMIT ?`, [sourceWorkId, limit]);
-    return (result.values ?? []).map(row => ({ id: String(row.id), name: String(row.name), type: String(row.type), unitCount: numberValue(row.unitCount), lineCount: numberValue(row.lineCount) }));
+    const result = await db.query(`SELECT c.id, c.preferred_name AS name, c.contributor_type AS type, COUNT(DISTINCT l.text_unit_id) AS unitCount, COUNT(l.id) AS lineCount FROM contributor c JOIN canonical_line l ON l.contributor_id = c.id WHERE (? = 'all' OR l.source_work_id = ?) GROUP BY c.id ORDER BY c.preferred_name COLLATE NOCASE LIMIT ?`, [sourceWorkId, sourceWorkId, limit]);
+    const rows = (result.values ?? []).map(row => ({ id: String(row.id), name: String(row.name), type: String(row.type), unitCount: numberValue(row.unitCount), lineCount: numberValue(row.lineCount) }));
+    const gurdasRows = rows.filter(row => BHAI_GURDAS_CONTRIBUTORS.includes(row.id));
+    if (!gurdasRows.length) return rows;
+    return [...rows.filter(row => !BHAI_GURDAS_CONTRIBUTORS.includes(row.id)), {
+      id: COMBINED_BHAI_GURDAS_ID, name: 'Bhai Gurdas Ji', type: 'author',
+      unitCount: gurdasRows.reduce((sum, row) => sum + row.unitCount, 0),
+      lineCount: gurdasRows.reduce((sum, row) => sum + row.lineCount, 0)
+    }].sort((a, b) => a.name.localeCompare(b.name)).slice(0, limit);
   }
 
   async glossary(query: string, limit = 20): Promise<GlossaryResult[]> {
@@ -450,7 +479,31 @@ export class MobileCorpusGateway {
     return (result.values ?? []).map(row => ({ id: String(row.id), headword: String(row.headword), content: String(row.content), provider: String(row.provider), reviewStatus: String(row.reviewStatus) }));
   }
 
-  private async themeSearch(query: string, sourceWorkId: string, limit: number): Promise<CorpusSearchResponse> {
+  private async tggspAvailableSearch(filters: SearchFilters, limit: number): Promise<CorpusSearchResponse> {
+    const db = await this.db();
+    const facets = searchFacetSql(filters, 'l');
+    const result = await db.query(`SELECT u.id AS textUnitId, u.source_work_id AS sourceWorkId,
+        COALESCE(u.title, 'Analysed Sabad') AS title, MIN(l.id) AS lineId, MIN(l.ang) AS ang,
+        COALESCE(MIN(c.preferred_name), '') AS contributorName,
+        COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS gurmukhi,
+        COALESCE((SELECT x.transliteration FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS transliteration,
+        group_concat(DISTINCT p.content_type) AS providerTypes
+      FROM text_unit u JOIN canonical_line l ON l.text_unit_id = u.id
+      LEFT JOIN contributor c ON c.id = l.contributor_id JOIN provider_content p ON p.text_unit_id = u.id
+      WHERE 1 = 1 ${facets.clause} GROUP BY u.id
+      ORDER BY MIN(l.ang), u.id LIMIT ?`, [...facets.params, limit]);
+    const results: CorpusSearchResult[] = (result.values ?? []).map(row => ({
+      id: `search:tggsp-available:${String(row.textUnitId)}`, resultType: 'translation',
+      textUnitId: String(row.textUnitId), sourceWorkId: String(row.sourceWorkId), title: String(row.title),
+      subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)} · TGGSP analysis available`,
+      gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
+      ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: String(row.lineId),
+      matchKind: 'analysis', providerContentTypes: splitProviderTypes(row.providerTypes)
+    }));
+    return { query: '', mode: 'english', results, candidateForms: [] };
+  }
+
+  private async themeSearch(query: string, filters: SearchFilters, limit: number): Promise<CorpusSearchResponse> {
     const db = await this.db();
     const key = latinFold(query);
     const curated: Record<string, string[]> = {
@@ -462,6 +515,9 @@ export class MobileCorpusGateway {
     };
     const terms = curated[key] ?? [key];
     const clauses = terms.map(() => `lower(p.content) LIKE ?`).join(' OR ');
+    const facets = searchFacetSql(filters, 'l', false);
+    const providerTypeFilter = filters.providerContentTypes.length
+      ? `AND p.content_type IN (${filters.providerContentTypes.map(() => '?').join(',')})` : '';
     const result = await db.query(`SELECT p.id, p.text_unit_id AS textUnitId, p.content_type AS contentType,
         p.content, u.source_work_id AS sourceWorkId, COALESCE(u.title, 'Analysed Sabad') AS title,
         COALESCE(MIN(l.ang), 1) AS ang, COALESCE(MIN(c.preferred_name), '') AS contributorName,
@@ -469,16 +525,17 @@ export class MobileCorpusGateway {
           ORDER BY x.ang, x.line_order LIMIT 1), '') AS gurmukhi
       FROM provider_content p JOIN text_unit u ON u.id = p.text_unit_id
       LEFT JOIN canonical_line l ON l.text_unit_id = u.id LEFT JOIN contributor c ON c.id = l.contributor_id
-      WHERE u.source_work_id = ? AND p.content_type IN
+      WHERE p.content_type IN
         ('literal_translation_en','interpretive_transcreation_en','commentary_en','poetical_dimension_en')
-        AND (${clauses}) GROUP BY p.id ORDER BY ang LIMIT ?`,
-      [sourceWorkId, ...terms.map(term => `%${term}%`), limit]);
+        AND (${clauses}) ${providerTypeFilter} ${facets.clause} GROUP BY p.id ORDER BY ang LIMIT ?`,
+      [...terms.map(term => `%${term}%`), ...filters.providerContentTypes, ...facets.params, limit]);
     const results: CorpusSearchResult[] = (result.values ?? []).map(row => ({
       id: `search:theme:${String(row.id)}`, resultType: 'theme', textUnitId: String(row.textUnitId),
       sourceWorkId: String(row.sourceWorkId), title: String(row.title),
       subtitle: `Experimental theme · TGGSP ${String(row.contentType).replaceAll('_', ' ')} · Ang ${numberValue(row.ang)}`,
       gurmukhi: String(row.gurmukhi), transliteration: '', english: plainText(String(row.content)),
-      ang: numberValue(row.ang), contributorName: String(row.contributorName)
+      ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: null,
+      matchKind: 'theme', providerContentTypes: [String(row.contentType)]
     }));
     return { query, mode: 'theme', results, candidateForms: [] };
   }
@@ -625,6 +682,31 @@ function alignedCandidates(gurmukhi: string, transliteration: string, query: str
 
 function plainText(content: string): string {
   return content.replace(/<[^>]*>/gu, ' ').replace(/&nbsp;/gu, ' ').replace(/\s+/gu, ' ').trim();
+}
+
+function defaultSearchFilters(): SearchFilters {
+  return { sourceWorkId: 'all', raag: '', contributorId: '', tggspOnly: false, providerContentTypes: [] };
+}
+
+function searchFacetSql(filters: SearchFilters, lineAlias: string, includeTggsp = true): { clause: string; params: unknown[] } {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (filters.sourceWorkId !== 'all') { clauses.push(`${lineAlias}.source_work_id = ?`); params.push(filters.sourceWorkId); }
+  if (filters.raag) { clauses.push(`${lineAlias}.raag = ?`); params.push(filters.raag); }
+  if (filters.contributorId === COMBINED_BHAI_GURDAS_ID) {
+    clauses.push(`${lineAlias}.contributor_id IN (${BHAI_GURDAS_CONTRIBUTORS.map(() => '?').join(',')})`);
+    params.push(...BHAI_GURDAS_CONTRIBUTORS);
+  } else if (filters.contributorId) { clauses.push(`${lineAlias}.contributor_id = ?`); params.push(filters.contributorId); }
+  if (includeTggsp && (filters.tggspOnly || filters.providerContentTypes.length)) {
+    const types = filters.providerContentTypes;
+    clauses.push(`EXISTS (SELECT 1 FROM provider_content facet_pc WHERE facet_pc.text_unit_id = ${lineAlias}.text_unit_id${types.length ? ` AND facet_pc.content_type IN (${types.map(() => '?').join(',')})` : ''})`);
+    params.push(...types);
+  }
+  return { clause: clauses.length ? `AND ${clauses.join(' AND ')}` : '', params };
+}
+
+function splitProviderTypes(value: unknown): string[] {
+  return String(value ?? '').split(',').filter(Boolean);
 }
 
 function providerGroupTitle(id: string): string {

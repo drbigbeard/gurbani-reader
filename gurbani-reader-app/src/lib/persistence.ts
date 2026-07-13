@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { personalStoreSupported, readPersonalState, writePersonalState } from './personal-store';
 
 export interface ReaderPreferences {
   showTransliteration: boolean;
@@ -59,17 +60,38 @@ export const defaultPersonalData: PersonalData = {
 
 export function usePersistentState<T>(key: string, initial: T): [T, (next: T | ((current: T) => T)) => void] {
   const [value, setValue] = useState<T>(() => readValue(key, initial));
+  const [nativeReady, setNativeReady] = useState(!personalStoreSupported());
+
+  useEffect(() => {
+    if (!personalStoreSupported()) return;
+    let active = true;
+    void readPersonalState<T>(key).then(stored => {
+      if (!active) return;
+      if (stored) setValue(current => mergeValue(current, stored));
+      else void writePersonalState(key, readValue(key, initial));
+      setNativeReady(true);
+    }).catch(() => setNativeReady(true));
+    return () => { active = false; };
+  }, [initial, key]);
 
   useEffect(() => {
     try { window.localStorage.setItem(key, JSON.stringify(value)); }
     catch { /* The application remains usable when private storage is unavailable. */ }
-  }, [key, value]);
+    if (nativeReady) void writePersonalState(key, value);
+  }, [key, nativeReady, value]);
 
   const update = useCallback((next: T | ((current: T) => T)) => {
     setValue(current => typeof next === 'function' ? (next as (current: T) => T)(current) : next);
   }, []);
 
   return [value, update];
+}
+
+function mergeValue<T>(fallback: T, stored: T): T {
+  if (fallback && stored && typeof fallback === 'object' && typeof stored === 'object' && !Array.isArray(fallback)) {
+    return { ...fallback, ...stored };
+  }
+  return stored;
 }
 
 function readValue<T>(key: string, fallback: T): T {

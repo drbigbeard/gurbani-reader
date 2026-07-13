@@ -1,9 +1,12 @@
-name: Build Android APK
+name: Build Android release input
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
+
+permissions:
+  contents: write
 
 jobs:
   android:
@@ -27,12 +30,22 @@ jobs:
         run: npm run corpus:restore
       - run: npm ci
       - run: npm run check
+      - run: npm run audit:pass1
       - run: npm run build:native
       - run: npx cap sync android
-      - run: ./gradlew assembleDebug
+      - run: ./gradlew assembleRelease
         working-directory: gurbani-reader-app/android
+      - name: Label unsigned build input
+        run: cp android/app/build/outputs/apk/release/app-release-unsigned.apk Gurbani-Reader-v0.11-pass1-unsigned-do-not-install.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Gurbani-Reader-v0.10.0-alpha.1-debug-apk
-          path: gurbani-reader-app/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Gurbani-Reader-v0.11-pass1-unsigned-build-input
+          path: gurbani-reader-app/Gurbani-Reader-v0.11-pass1-unsigned-do-not-install.apk
           if-no-files-found: error
+      - name: Publish unsigned build input for private-key signing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.11.0-pass.1
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.11 Pass 1" --notes "Automated Android build input. Do not install the unsigned asset; use the separately signed and verified APK supplied from the release process."
+          gh release upload "$TAG" Gurbani-Reader-v0.11-pass1-unsigned-do-not-install.apk --clobber

@@ -137,6 +137,10 @@ CREATE TABLE IF NOT EXISTS provider_content (
   FOREIGN KEY (text_unit_id) REFERENCES text_unit(id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_provider_unit_type ON provider_content(text_unit_id, content_type);
+CREATE INDEX IF NOT EXISTS idx_provider_line_type ON provider_content(canonical_line_id, content_type);
+CREATE INDEX IF NOT EXISTS idx_line_facets ON canonical_line(source_work_id, raag, contributor_id, text_unit_id);
+
 CREATE TABLE IF NOT EXISTS glossary_entry (
   id TEXT PRIMARY KEY NOT NULL,
   headword TEXT NOT NULL,

@@ -1,5 +1,5 @@
 import { lines, phoneticCandidates } from '../data/fixture';
-import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResponse, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
+import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResponse, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
 import { MobileCorpusGateway } from './mobile-gateway';
 
 const lexicalTokens = (line: CanonicalLine): string[] =>
@@ -7,7 +7,7 @@ const lexicalTokens = (line: CanonicalLine): string[] =>
 
 export interface CorpusGateway {
   resolveCandidates(query: string): Promise<SearchCandidate[]>;
-  exactWordStats(gurmukhi: string, sourceWorkId?: string): Promise<WordStats>;
+  exactWordStats(gurmukhi: string, filters?: SearchFilters): Promise<WordStats>;
   getLines(ang?: number, sourceWorkId?: string): Promise<CanonicalLine[]>;
   sources(): Promise<SourceWorkOption[]>;
   corpusInfo(): Promise<CorpusInfo>;
@@ -16,12 +16,12 @@ export interface CorpusGateway {
   glossary(query: string, limit?: number): Promise<GlossaryResult[]>;
   getTextUnit(textUnitId: string): Promise<ShabadView>;
   contributorUnits(contributorId: string, sourceWorkId?: string, limit?: number, offset?: number): Promise<TextUnitSummary[]>;
-  searchCorpus(query: string, sourceWorkId?: string, limit?: number, mode?: SearchMode): Promise<CorpusSearchResponse>;
-  concordance(gurmukhi: string, sourceWorkId?: string, limit?: number, offset?: number): Promise<ConcordancePage>;
+  searchCorpus(query: string, filters?: SearchFilters, limit?: number, mode?: SearchMode): Promise<CorpusSearchResponse>;
+  concordance(gurmukhi: string, filters?: SearchFilters, limit?: number, offset?: number): Promise<ConcordancePage>;
   providerCoverage(): Promise<ProviderCoverage>;
   unmappedProviderAnalyses(limit?: number, offset?: number): Promise<ProviderAnalysis[]>;
   relatedForms(gurmukhi: string, sourceWorkId?: string, limit?: number): Promise<RelatedForm[]>;
-  groupedFrequency(forms: string[], sourceWorkId?: string): Promise<GroupedFrequency>;
+  groupedFrequency(forms: string[], filters?: SearchFilters): Promise<GroupedFrequency>;
   raagSummaries(sourceWorkId?: string): Promise<RaagSummary[]>;
   raagContributorSummaries(raag: string, sourceWorkId?: string): Promise<RaagContributorSummary[]>;
   raagUnits(raag: string, sourceWorkId?: string, limit?: number, offset?: number, contributorId?: string): Promise<TextUnitSummary[]>;
@@ -82,10 +82,10 @@ class FixtureCorpusGateway implements CorpusGateway {
   }
   async searchCorpus(query: string): Promise<CorpusSearchResponse> {
     const trimmed = query.trim();
-    const results = lines.filter(line => line.gurmukhi.includes(trimmed) || line.transliteration.toLowerCase().includes(trimmed.toLowerCase())).map(line => ({ id: `fixture:${line.id}`, resultType: 'sabad' as const, textUnitId: line.textUnitId, sourceWorkId: line.sourceWorkId, title: 'Fixture Sabad', subtitle: `Ang ${line.ang}`, gurmukhi: line.gurmukhi, transliteration: line.transliteration, english: '', ang: line.ang, contributorName: 'Guru Nanak Sahib' }));
+    const results = lines.filter(line => line.gurmukhi.includes(trimmed) || line.transliteration.toLowerCase().includes(trimmed.toLowerCase())).map(line => ({ id: `fixture:${line.id}`, resultType: 'sabad' as const, textUnitId: line.textUnitId, sourceWorkId: line.sourceWorkId, title: 'Fixture Sabad', subtitle: `Ang ${line.ang}`, gurmukhi: line.gurmukhi, transliteration: line.transliteration, english: '', ang: line.ang, contributorName: 'Guru Nanak Sahib', lineId: line.id, matchKind: 'text' as const }));
     return { query: trimmed, mode: /^[\u0A00-\u0A7F]/u.test(trimmed) ? 'gurmukhi' : 'latin', results, candidateForms: await this.resolveCandidates(trimmed) };
   }
-  async concordance(gurmukhi: string, _sourceWorkId = 'source:G', limit = 50, offset = 0): Promise<ConcordancePage> {
+  async concordance(gurmukhi: string, _filters?: SearchFilters, limit = 50, offset = 0): Promise<ConcordancePage> {
     const matches = lines.filter(line => lexicalTokens(line).includes(gurmukhi.normalize('NFC')));
     return { total: matches.length, offset, limit, matches: matches.slice(offset, offset + limit) };
   }

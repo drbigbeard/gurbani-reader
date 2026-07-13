@@ -1,5 +1,13 @@
 export type Screen = 'home' | 'read' | 'sabad' | 'bani' | 'search' | 'word' | 'browse' | 'contributor' | 'raag' | 'tggsp' | 'glossary' | 'saved';
-export type SearchMode = 'auto' | 'first-start' | 'first-any' | 'theme';
+export type SearchMode = 'auto' | 'theme';
+
+export interface SearchFilters {
+  sourceWorkId: 'all' | string;
+  raag: string;
+  contributorId: string;
+  tggspOnly: boolean;
+  providerContentTypes: string[];
+}
 
 export interface CanonicalLine {
   id: string;
@@ -57,6 +65,9 @@ export interface CorpusSearchResult {
   english: string;
   ang: number | null;
   contributorName: string;
+  lineId: string | null;
+  matchKind: 'text' | 'first-letters' | 'analysis' | 'theme';
+  providerContentTypes?: string[];
 }
 
 export interface CorpusSearchResponse {

@@ -1,10 +1,11 @@
-# Gurbani Reader & Corpus Explorer
+# Gurbani Reader
 
-Local-first React/TypeScript and Capacitor reader for Android and iOS, backed by the bundled SQLite corpus pack.
+Local-first React/TypeScript and Capacitor reader for Android and iOS, backed by bundled SQLite reading data.
 
 ## Current alpha
 
-- Guru Granth Sahib, Bhai Gurdas Ji Vaaran and Bhai Gurdas Singh Ji Vaaran corpus sources.
+- Guru Granth Sahib and Vaaran Bhai Gurdas Ji reading sources. The two upstream
+  Bhai Gurdas contributor records are presented as one author in the app.
 - 82 source-scoped Guru Granth Sahib named Bani collections from BaniDB.
 - Shabad-first author and Raag navigation.
 - Gurmukhi, phonetic Latin and attributed SikhRI/TGGSP English-analysis search.
@@ -26,10 +27,14 @@ The generated Capacitor projects are included in `android/` and `ios/`. A releas
 npm run corpus:restore
 npm run build:native
 npx cap sync
-cd android && ./gradlew assembleDebug
+cd android && ./gradlew assembleDebug # development only
 ```
 
-The database name is schema-versioned. Installing v0.10 copies the v4 reading database automatically; bookmarks and preferences remain in local app storage.
+The database name is schema-versioned. Installing v0.11 Pass 1 copies the v4
+reading database automatically. GitHub Actions compiles an unsigned build input;
+the release process signs and verifies the installable APK with the permanent
+private key. Local debug builds cannot upgrade that release. Personal data and
+preferences now live in a separate native database.
 
 ## Data behaviour
 
