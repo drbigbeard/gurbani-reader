@@ -44,18 +44,18 @@ jobs:
           test -x "$ZIPALIGN"
           "$ZIPALIGN" -P 16 -f -v 4 \
             android/app/build/outputs/apk/release/app-release-unsigned.apk \
-            Gurbani-Reader-v0.11-rc2-aligned-unsigned-do-not-install.apk
+            Gurbani-Reader-v0.11-rc3-aligned-unsigned-do-not-install.apk
           "$ZIPALIGN" -c -P 16 -v 4 \
-            Gurbani-Reader-v0.11-rc2-aligned-unsigned-do-not-install.apk
+            Gurbani-Reader-v0.11-rc3-aligned-unsigned-do-not-install.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Gurbani-Reader-v0.11-rc2-aligned-unsigned-build-input
-          path: gurbani-reader-app/Gurbani-Reader-v0.11-rc2-aligned-unsigned-do-not-install.apk
+          name: Gurbani-Reader-v0.11-rc3-aligned-unsigned-build-input
+          path: gurbani-reader-app/Gurbani-Reader-v0.11-rc3-aligned-unsigned-do-not-install.apk
           if-no-files-found: error
       - name: Publish unsigned build input for private-key signing
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v0.11.0-rc.2
+          TAG: v0.11.0-rc.3
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.11 RC 2" --notes "Automated, 16 KB-aligned Android build input. Do not install the unsigned asset; use the separately signed and verified APK supplied from the release process."
-          gh release upload "$TAG" Gurbani-Reader-v0.11-rc2-aligned-unsigned-do-not-install.apk --clobber
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.11 RC 3" --notes "Inline TGGSP Translation, etymology, named-Bani crosswalks and ordered ceremony readings. The automated asset is unsigned; use the separately signed and verified APK supplied from the release process."
+          gh release upload "$TAG" Gurbani-Reader-v0.11-rc3-aligned-unsigned-do-not-install.apk --clobber

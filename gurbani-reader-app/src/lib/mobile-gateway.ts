@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { lines, phoneticCandidates } from '../data/fixture';
-import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResult, CorpusSearchResponse, FrequencyPage, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, ProviderLayer, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
+import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResult, CorpusSearchResponse, FrequencyPage, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, ProviderLayer, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, TggspCollectionSummary, TggspLineTerm, WordStats } from '../types';
 import { MOBILE_DATABASE_NAME, MOBILE_SCHEMA_SQL, MOBILE_SCHEMA_VERSION } from './mobile-schema';
 
 type DatabaseRow = Record<string, unknown>;
@@ -99,7 +99,7 @@ export class MobileCorpusGateway {
       const list = byUnit.get(layer.textUnitId) ?? [];
       list.push(layer); byUnit.set(layer.textUnitId, list);
     }
-    return rows.map(row => ({ ...row, providerLayers: byUnit.get(row.textUnitId) ?? [] }));
+    return this.enrichTggsp(rows.map(row => ({ ...row, providerLayers: byUnit.get(row.textUnitId) ?? [] })));
   }
 
   async getTextUnit(textUnitId: string): Promise<ShabadView> {
@@ -125,7 +125,7 @@ export class MobileCorpusGateway {
     ]);
     const unit = first(unitResult.values);
     if (!unit.id) throw new Error(`Text unit not found: ${textUnitId}`);
-    const unitLines = (lineResult.values ?? []) as unknown as CanonicalLine[];
+    const unitLines = await this.enrichTggsp((lineResult.values ?? []) as unknown as CanonicalLine[]);
     return {
       id: String(unit.id), sourceWorkId: String(unit.sourceWorkId), title: String(unit.title),
       contributorId: String(unit.contributorId), contributorName: String(unit.contributorName),
@@ -407,33 +407,125 @@ export class MobileCorpusGateway {
     const db = await this.db();
     const result = await db.query(`SELECT id, token, source_work_id AS sourceWorkId, gurmukhi,
       COALESCE(transliteration, '') AS transliteration, verse_count AS verseCount,
-      attribution_label AS attributionLabel FROM bani_collection
+      attribution_label AS attributionLabel,
+      COALESCE((SELECT COUNT(DISTINCT x.line_order) FROM bani_line_crosswalk x
+        JOIN tggsp_line_member m ON m.canonical_line_id=x.canonical_line_id AND m.is_anchor=1
+        JOIN tggsp_line_alignment a ON a.id=m.alignment_id
+        WHERE x.bani_id=bani_collection.id AND a.literal_translation_en<>''),0) AS tggspTranslatedLines
+      FROM bani_collection
       WHERE (? = 'all' OR source_work_id = ?) ORDER BY upstream_id`, [sourceWorkId, sourceWorkId]);
     return (result.values ?? []).map(row => ({ id: String(row.id), token: String(row.token),
       sourceWorkId: String(row.sourceWorkId), gurmukhi: String(row.gurmukhi),
       transliteration: String(row.transliteration), verseCount: numberValue(row.verseCount),
-      attributionLabel: String(row.attributionLabel) }));
+      attributionLabel: String(row.attributionLabel), tggspTranslatedLines: numberValue(row.tggspTranslatedLines),
+      tggspAvailable: numberValue(row.tggspTranslatedLines) > 0 }));
   }
 
   async getBani(baniId: string): Promise<BaniView> {
+    if (baniId.startsWith('tggsp:collection:')) return this.getTggspCollection(baniId.slice('tggsp:collection:'.length));
     const db = await this.db();
     const [summaryResult, linesResult] = await Promise.all([
       db.query(`SELECT id, token, source_work_id AS sourceWorkId, gurmukhi,
         COALESCE(transliteration, '') AS transliteration, verse_count AS verseCount,
         attribution_label AS attributionLabel FROM bani_collection WHERE id = ?`, [baniId]),
-      db.query(`SELECT line_order AS 'order', header_level AS headerLevel,
-        paragraph_number AS paragraphNumber, gurmukhi,
-        COALESCE(transliteration, '') AS transliteration FROM bani_collection_line
-        WHERE bani_id = ? ORDER BY line_order`, [baniId])
+      db.query(`SELECT COALESCE(c.id,'bani-line:'||b.line_order) AS id,
+        COALESCE(c.source_work_id,'source:G') AS sourceWorkId, COALESCE(c.text_unit_id,'') AS textUnitId,
+        b.line_order AS 'order', COALESCE(c.ang,0) AS ang, b.header_level AS headerLevel,
+        b.paragraph_number AS paragraphNumber, b.gurmukhi, COALESCE(b.transliteration,'') AS transliteration,
+        COALESCE(c.contributor_id,'') AS contributorId, COALESCE(k.preferred_name,'') AS contributorName
+        FROM bani_collection_line b LEFT JOIN bani_line_crosswalk x ON x.bani_id=b.bani_id AND x.line_order=b.line_order
+        LEFT JOIN canonical_line c ON c.id=x.canonical_line_id LEFT JOIN contributor k ON k.id=c.contributor_id
+        WHERE b.bani_id=? ORDER BY b.line_order`, [baniId])
     ]);
     const row = first(summaryResult.values);
     if (!row.id) throw new Error(`Named Bani not found: ${baniId}`);
+    const lines = await this.enrichTggsp((linesResult.values ?? []) as unknown as CanonicalLine[]);
+    const translated = lines.filter(line => line.tggspTranslation).length;
     return { id: String(row.id), token: String(row.token), sourceWorkId: String(row.sourceWorkId),
       gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration),
       verseCount: numberValue(row.verseCount), attributionLabel: String(row.attributionLabel),
-      lines: (linesResult.values ?? []).map(line => ({ order: numberValue(line.order),
-        headerLevel: numberValue(line.headerLevel), paragraphNumber: line.paragraphNumber == null ? null : numberValue(line.paragraphNumber),
-        gurmukhi: String(line.gurmukhi), transliteration: String(line.transliteration) })) };
+      tggspAvailable: translated > 0, tggspTranslatedLines: translated, collectionType: 'bani',
+      lines: lines.map((line, index) => ({ ...line, order: numberValue(line.order),
+        headerLevel: numberValue((linesResult.values ?? [])[index]?.headerLevel),
+        paragraphNumber: (linesResult.values ?? [])[index]?.paragraphNumber == null ? null : numberValue((linesResult.values ?? [])[index]?.paragraphNumber) })) };
+  }
+
+  async tggspCollections(): Promise<TggspCollectionSummary[]> {
+    const db = await this.db();
+    const result = await db.query(`SELECT c.code,c.title_en AS titleEn,c.title_pa AS titlePa,
+      c.collection_type AS collectionType,c.collection_order AS collectionOrder,
+      COUNT(DISTINCT s.section_id) AS sectionCount,
+      COUNT(DISTINCT CASE WHEN a.literal_translation_en<>'' THEN a.anchor_line_id END) AS translatedLineCount
+      FROM tggsp_collection c LEFT JOIN tggsp_collection_section s ON s.collection_code=c.code
+      LEFT JOIN tggsp_line_alignment a ON a.collection_code=c.code
+      GROUP BY c.code ORDER BY c.collection_order,c.title_en`);
+    return (result.values ?? []).map(row => ({ code:String(row.code),titleEn:String(row.titleEn),titlePa:String(row.titlePa),
+      collectionType:String(row.collectionType) as TggspCollectionSummary['collectionType'],collectionOrder:numberValue(row.collectionOrder),
+      sectionCount:numberValue(row.sectionCount),translatedLineCount:numberValue(row.translatedLineCount) }));
+  }
+
+  async getTggspCollection(code: string): Promise<BaniView> {
+    const db = await this.db();
+    const [collectionResult, sectionResult, lineResult] = await Promise.all([
+      db.query(`SELECT code,title_en AS titleEn,title_pa AS titlePa,collection_type AS collectionType,
+        introduction_en AS introduction,attribution_label AS attributionLabel FROM tggsp_collection WHERE code=?`,[code]),
+      db.query(`SELECT section_order AS 'order',title_en AS title,author_en AS author FROM tggsp_collection_section
+        WHERE collection_code=? ORDER BY section_order`,[code]),
+      db.query(`SELECT a.id AS alignmentId,c.id,c.source_work_id AS sourceWorkId,c.text_unit_id AS textUnitId,c.ang,
+        c.gurmukhi,COALESCE(c.transliteration,'') AS transliteration,COALESCE(c.contributor_id,'') AS contributorId,
+        COALESCE(k.preferred_name,'') AS contributorName,a.section_order AS sectionOrder,
+        a.subsection_order AS subsectionOrder,a.provider_line_order AS providerLineOrder,m.member_order AS memberOrder
+        FROM tggsp_line_alignment a JOIN tggsp_line_member m ON m.alignment_id=a.id
+        JOIN canonical_line c ON c.id=m.canonical_line_id LEFT JOIN contributor k ON k.id=c.contributor_id
+        WHERE a.collection_code=? ORDER BY a.section_order,a.subsection_order,a.provider_line_order,m.member_order`,[code])
+    ]);
+    const collection = first(collectionResult.values);
+    if (!collection.code) throw new Error(`TGGSP reading not found: ${code}`);
+    // Do not deduplicate canonical IDs globally: ceremony compilations may
+    // intentionally repeat a line in a later supplied section.
+    const ordered = (lineResult.values ?? []) as DatabaseRow[];
+    const enriched = await this.enrichTggsp(ordered.map((raw,index)=>({ id:String(raw.id),sourceWorkId:String(raw.sourceWorkId),
+      textUnitId:String(raw.textUnitId),order:index,ang:numberValue(raw.ang),gurmukhi:String(raw.gurmukhi),
+      transliteration:String(raw.transliteration),contributorId:String(raw.contributorId),contributorName:String(raw.contributorName) })),code);
+    const firstOrderBySection = new Map<number,number>();
+    ordered.forEach((raw,index)=>{const order=numberValue(raw.sectionOrder);if(!firstOrderBySection.has(order))firstOrderBySection.set(order,index);});
+    return { id:`tggsp:collection:${code}`,token:code,sourceWorkId:'source:G',gurmukhi:String(collection.titlePa),
+      transliteration:String(collection.titleEn),verseCount:enriched.length,attributionLabel:String(collection.attributionLabel),
+      tggspAvailable:enriched.some(line=>line.tggspTranslation),tggspTranslatedLines:enriched.filter(line=>line.tggspTranslation).length,
+      introduction:String(collection.introduction),collectionType:String(collection.collectionType) as BaniView['collectionType'],
+      sections:(sectionResult.values??[]).flatMap(row=>{const firstLineOrder=firstOrderBySection.get(numberValue(row.order));return firstLineOrder===undefined?[]:[{order:numberValue(row.order),title:String(row.title),author:String(row.author),firstLineOrder}];}),
+      lines:enriched.map((line,index)=>({ ...line,order:index,headerLevel:firstOrderBySection.has(numberValue(ordered[index]?.sectionOrder))&&firstOrderBySection.get(numberValue(ordered[index]?.sectionOrder))===index?2:0,paragraphNumber:numberValue(ordered[index]?.sectionOrder) })) };
+  }
+
+  private async enrichTggsp(lines: CanonicalLine[], preferredCode = ''): Promise<CanonicalLine[]> {
+    const canonicalIds = [...new Set(lines.map(line=>line.id).filter(id=>id&&!id.startsWith('bani-line:')))];
+    if (!canonicalIds.length) return lines;
+    const db = await this.db(); const translationRows:DatabaseRow[]=[];const termRows:DatabaseRow[]=[];
+    // Android SQLite commonly limits a statement to 999 bound variables.
+    // Large named Banis (for example Sukhmani Sahib) must therefore be enriched
+    // in bounded batches instead of failing after the reader has opened.
+    for(let start=0;start<canonicalIds.length;start+=400){const batch=canonicalIds.slice(start,start+400);const placeholders=batch.map(()=>'?').join(',');
+      const [translationResult,termResult] = await Promise.all([
+        db.query(`SELECT m.canonical_line_id AS lineId,a.collection_code AS collectionCode,
+          a.literal_translation_en AS translation,a.translation_scope AS translationScope,
+          c.collection_type AS collectionType,c.collection_order AS collectionOrder
+          FROM tggsp_line_member m JOIN tggsp_line_alignment a ON a.id=m.alignment_id
+          JOIN tggsp_collection c ON c.code=a.collection_code
+          WHERE m.is_anchor=1 AND a.literal_translation_en<>'' AND m.canonical_line_id IN (${placeholders})
+          ORDER BY lineId,CASE WHEN a.collection_code=? THEN 0 WHEN c.collection_type='composition' THEN 1 ELSE 2 END,c.collection_order`,[...batch,preferredCode]),
+        db.query(`SELECT id,collection_code AS collectionCode,canonical_line_id AS lineId,headword,transliteration,
+          meaning_en AS meaningEn,grammar_en AS grammarEn,etymology_en AS etymologyEn,
+          meaning_pa AS meaningPa,grammar_pa AS grammarPa,etymology_pa AS etymologyPa
+          FROM tggsp_line_term WHERE canonical_line_id IN (${placeholders}) ORDER BY lineId,headword`,batch)
+      ]);translationRows.push(...(translationResult.values??[]));termRows.push(...(termResult.values??[]));}
+    const translations=new Map<string,DatabaseRow>();
+    for(const row of translationRows)if(!translations.has(String(row.lineId)))translations.set(String(row.lineId),row);
+    const terms=new Map<string,TggspLineTerm[]>();
+    for(const row of termRows){const lineId=String(row.lineId);const selected=translations.get(lineId);if(selected&&String(row.collectionCode)!==String(selected.collectionCode))continue;const list=terms.get(lineId)??[];const term={id:String(row.id),headword:String(row.headword),transliteration:String(row.transliteration),meaningEn:String(row.meaningEn),grammarEn:String(row.grammarEn),etymologyEn:String(row.etymologyEn),meaningPa:String(row.meaningPa),grammarPa:String(row.grammarPa),etymologyPa:String(row.etymologyPa)};if(!list.some(item=>item.headword===term.headword&&item.meaningEn===term.meaningEn))list.push(term);terms.set(lineId,list);}
+    return lines.map(line=>{const translation=translations.get(line.id);return {...line,
+      tggspTranslation:translation?String(translation.translation):undefined,
+      tggspTranslationScope:translation?String(translation.translationScope) as CanonicalLine['tggspTranslationScope']:undefined,
+      tggspCollectionCode:translation?String(translation.collectionCode):undefined,tggspTerms:terms.get(line.id)??[]};});
   }
 
   async sources(): Promise<SourceWorkOption[]> {

@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
 
-const path = 'public/assets/databases/gurbani_reader_v4SQLite.db';
+const path = 'public/assets/databases/gurbani_reader_v5SQLite.db';
 if (!existsSync(path)) throw new Error(`Reading database is missing: ${path}`);
 
 const db = new DatabaseSync(path, { readOnly: true });

@@ -1,5 +1,5 @@
 import { lines, phoneticCandidates } from '../data/fixture';
-import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResponse, FrequencyPage, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, WordStats } from '../types';
+import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResponse, FrequencyPage, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, TggspCollectionSummary, WordStats } from '../types';
 import { MobileCorpusGateway } from './mobile-gateway';
 
 const lexicalTokens = (line: CanonicalLine): string[] =>
@@ -28,6 +28,8 @@ export interface CorpusGateway {
   raagUnits(raag: string, sourceWorkId?: string, limit?: number, offset?: number, contributorId?: string): Promise<TextUnitSummary[]>;
   namedBanis(sourceWorkId?: string): Promise<BaniSummary[]>;
   getBani(baniId: string): Promise<BaniView>;
+  tggspCollections(): Promise<TggspCollectionSummary[]>;
+  getTggspCollection(code: string): Promise<BaniView>;
   linesByIds(ids: string[]): Promise<CanonicalLine[]>;
   textUnitsByIds(ids: string[]): Promise<TextUnitSummary[]>;
 }
@@ -105,6 +107,8 @@ class FixtureCorpusGateway implements CorpusGateway {
   async raagUnits(): Promise<TextUnitSummary[]> { return []; }
   async namedBanis(): Promise<BaniSummary[]> { return []; }
   async getBani(): Promise<BaniView> { throw new Error('Named Banis are not available in the fixture'); }
+  async tggspCollections(): Promise<TggspCollectionSummary[]> { return []; }
+  async getTggspCollection(): Promise<BaniView> { throw new Error('TGGSP collections are not available in the fixture'); }
   async linesByIds(ids: string[]): Promise<CanonicalLine[]> { return lines.filter(line => ids.includes(line.id)); }
   async textUnitsByIds(ids: string[]): Promise<TextUnitSummary[]> { return (await Promise.all(ids.map(id => this.getTextUnit(id).catch(() => null)))).flatMap(value => value ? [value] : []); }
 }
@@ -161,6 +165,8 @@ export class HttpCorpusGateway implements CorpusGateway {
   async raagUnits(): Promise<TextUnitSummary[]> { throw new Error('Raag units endpoint is not available'); }
   async namedBanis(): Promise<BaniSummary[]> { throw new Error('Named Banis endpoint is not available'); }
   async getBani(): Promise<BaniView> { throw new Error('Named Bani endpoint is not available'); }
+  async tggspCollections(): Promise<TggspCollectionSummary[]> { return []; }
+  async getTggspCollection(): Promise<BaniView> { throw new Error('TGGSP collection endpoint is not available'); }
   async linesByIds(): Promise<CanonicalLine[]> { throw new Error('Saved-line endpoint is not available'); }
   async textUnitsByIds(): Promise<TextUnitSummary[]> { throw new Error('Saved-unit endpoint is not available'); }
 

@@ -5,9 +5,9 @@ import { resolve, dirname } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip } from 'node:zlib';
 
-const inputPath = resolve(process.argv[2] ?? 'corpus-pack/gurbani_reader_v4SQLite.db.gz');
-const outputPath = resolve(process.argv[3] ?? 'public/assets/databases/gurbani_reader_v4SQLite.db');
-const expected = '8da59be2288d7abb0065d1464d4509f69f31db56a661be0053a94bde18eebc92';
+const inputPath = resolve(process.argv[2] ?? 'corpus-pack/gurbani_reader_v5SQLite.db.gz');
+const outputPath = resolve(process.argv[3] ?? 'public/assets/databases/gurbani_reader_v5SQLite.db');
+const expected = '4299c273c48b2329a443e17b5a7e68c5dcb1b5ccf759c5a61a4b115a938cdea8';
 mkdirSync(dirname(outputPath), { recursive: true });
 await pipeline(createReadStream(inputPath), createGunzip(), createWriteStream(outputPath));
 const hash = createHash('sha256');

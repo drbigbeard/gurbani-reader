@@ -22,6 +22,22 @@ export interface CanonicalLine {
   providerLayers?: ProviderLayer[];
   raagId?: string;
   raag?: string;
+  tggspTranslation?: string;
+  tggspTranslationScope?: 'line' | 'passage' | 'none';
+  tggspCollectionCode?: string;
+  tggspTerms?: TggspLineTerm[];
+}
+
+export interface TggspLineTerm {
+  id: string;
+  headword: string;
+  transliteration: string;
+  meaningEn: string;
+  grammarEn: string;
+  etymologyEn: string;
+  meaningPa: string;
+  grammarPa: string;
+  etymologyPa: string;
 }
 
 export interface ProviderLayer {
@@ -44,6 +60,7 @@ export interface TextUnitSummary {
   preview: string;
   transliteration: string;
   raag: string;
+  tggspAvailable?: boolean;
 }
 
 export interface ShabadView extends TextUnitSummary {
@@ -126,17 +143,40 @@ export interface BaniSummary {
   transliteration: string;
   verseCount: number;
   attributionLabel: string;
+  tggspAvailable?: boolean;
+  tggspTranslatedLines?: number;
 }
 
 export interface BaniLine {
+  id: string;
+  sourceWorkId: string;
+  textUnitId: string;
   order: number;
+  ang: number;
   headerLevel: number;
   paragraphNumber: number | null;
   gurmukhi: string;
   transliteration: string;
+  contributorId: string;
+  contributorName?: string;
+  tggspTranslation?: string;
+  tggspTranslationScope?: 'line' | 'passage' | 'none';
+  tggspCollectionCode?: string;
+  tggspTerms?: TggspLineTerm[];
 }
 
-export interface BaniView extends BaniSummary { lines: BaniLine[]; }
+export interface BaniSection { order: number; title: string; author: string; firstLineOrder: number; }
+export interface BaniView extends BaniSummary { lines: BaniLine[]; introduction?: string; sections?: BaniSection[]; collectionType?: 'bani' | 'composition' | 'ceremonial'; }
+
+export interface TggspCollectionSummary {
+  code: string;
+  titleEn: string;
+  titlePa: string;
+  collectionType: 'composition' | 'ceremonial';
+  collectionOrder: number;
+  sectionCount: number;
+  translatedLineCount: number;
+}
 
 export interface GroupedFrequency {
   forms: Array<{ form: string; frequency: number }>;

@@ -4,6 +4,7 @@ import type { SearchFilters, SearchMode } from '../types';
 
 export interface ReaderPreferences {
   showTransliteration: boolean;
+  showTranslation: boolean;
   showProviderLayers: boolean;
   theme: 'light' | 'paper' | 'sepia' | 'dark' | 'black';
   textScale: number;
@@ -34,6 +35,7 @@ export interface SavedSearch { id: string; title: string; query: string; filters
 
 export const defaultPreferences: ReaderPreferences = {
   showTransliteration: true,
+  showTranslation: true,
   showProviderLayers: true,
   theme: 'paper',
   textScale: 1,

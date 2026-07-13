@@ -1,0 +1,56 @@
+.reader-line .translation {
+  margin: 7px 0 0;
+  color: var(--latin-color, var(--ink));
+  white-space: pre-line;
+}
+
+.line-etymology {
+  margin-top: 8px;
+  border-left: 2px solid var(--line);
+  padding-left: 10px;
+  color: var(--latin-color, var(--ink));
+}
+
+.line-etymology > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.line-etymology > div { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.line-etymology > div:last-child { border-bottom: 0; }
+.line-etymology small { display: block; color: var(--muted); }
+.line-etymology p { margin: 5px 0; font-size: 14px; line-height: 1.45; }
+
+.translation-coverage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.reading-section {
+  display: grid;
+  gap: 3px;
+  margin: 24px 0 8px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.reading-section:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.reading-section b { font-size: 18px; }
+.reading-section small { color: var(--muted); }
+
+.collection-introduction {
+  background: var(--soft);
+  border-radius: 12px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+}
+
+.collection-introduction summary { cursor: pointer; font-weight: 700; }
+.collection-introduction p { white-space: pre-line; line-height: 1.55; }
+.attribution-note { border-top: 1px solid var(--line); padding-top: 12px; }

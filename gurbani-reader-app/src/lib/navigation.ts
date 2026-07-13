@@ -8,7 +8,6 @@ const validScreens = new Set<Screen>(['home','read','sabad','bani','search','wor
 
 export function useNavigation(initial: Screen = 'home') {
   const initialised = useRef(false);
-  const lastRootBack = useRef(0);
   const [screen, setScreen] = useState<Screen>(initial);
   const [exitHint, setExitHint] = useState(false);
 
@@ -40,13 +39,10 @@ export function useNavigation(initial: Screen = 'home') {
         history.back();
         return;
       }
-      const now = Date.now();
-      if (now - lastRootBack.current < 1800) void NativeApp.exitApp();
-      else {
-        lastRootBack.current = now;
-        setExitHint(true);
-        window.setTimeout(() => setExitHint(false), 1800);
-      }
+      // This is a private reading app: a back gesture at Home stays in the app.
+      // Nested screens always use the route history above.
+      setExitHint(true);
+      window.setTimeout(() => setExitHint(false), 1400);
     }).then(handle => { remove = () => handle.remove(); });
     return () => { void remove?.(); };
   }, []);
