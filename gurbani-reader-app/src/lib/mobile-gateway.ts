@@ -235,7 +235,7 @@ export class MobileCorpusGateway {
 
     const providerTypeFilter = filters.providerContentTypes.length
       ? `AND p.content_type IN (${filters.providerContentTypes.map(() => '?').join(',')})` : '';
-    const englishFacets = searchFacetSql(filters, 'l', false);
+    const englishFacets = searchFacetSql(filters, 'l');
     const englishResult = !isGurmukhi ? await db.query(`SELECT p.id, p.text_unit_id AS textUnitId,
         p.content_type AS contentType, p.content, u.source_work_id AS sourceWorkId,
         COALESCE(u.title, 'Analysed Sabad') AS title,
@@ -254,10 +254,23 @@ export class MobileCorpusGateway {
       subtitle: `${String(row.contentType).replaceAll('_', ' ')} · Ang ${numberValue(row.ang)}`,
       gurmukhi: String(row.gurmukhi), transliteration: '', english: plainText(String(row.content)),
       ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: String(row.lineId),
-      matchKind: 'analysis', providerContentTypes: splitProviderTypes(row.providerTypes)
+      matchKind: 'analysis', providerContentTypes: splitProviderTypes(row.providerTypes).length ? splitProviderTypes(row.providerTypes) : ['tggsp-linked']
     }));
-    return { query: trimmed, mode: isGurmukhi ? 'gurmukhi' : translationResults.length > sabadResults.length ? 'english' : 'latin',
-      results: [...sabadResults, ...initialResults, ...translationResults].slice(0, limit), candidateForms: [...candidateMap.values()].slice(0, 12) };
+    const linkedEnglishResult = !isGurmukhi ? await db.query(`SELECT l.id AS lineId,l.text_unit_id AS textUnitId,
+        l.source_work_id AS sourceWorkId,l.ang,l.gurmukhi,COALESCE(l.transliteration,'') AS transliteration,
+        COALESCE(c.preferred_name,'') AS contributorName,COALESCE(u.title,'Sabad') AS title,
+        COALESCE(MIN(CASE WHEN lower(tt.meaning_en) LIKE ? THEN tt.meaning_en END),
+          MIN(CASE WHEN lower(a.literal_translation_en) LIKE ? THEN a.literal_translation_en END),'') AS content
+      FROM canonical_line l JOIN text_unit u ON u.id=l.text_unit_id LEFT JOIN contributor c ON c.id=l.contributor_id
+      LEFT JOIN tggsp_line_term tt ON tt.canonical_line_id=l.id
+      LEFT JOIN tggsp_line_member tm ON tm.canonical_line_id=l.id LEFT JOIN tggsp_line_alignment a ON a.id=tm.alignment_id
+      WHERE (lower(tt.meaning_en) LIKE ? OR lower(tt.etymology_en) LIKE ? OR lower(a.literal_translation_en) LIKE ?) ${englishFacets.clause}
+      GROUP BY l.id ORDER BY CASE l.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END,l.ang,l.line_order LIMIT ?`,
+      [`%${trimmed.toLowerCase()}%`,`%${trimmed.toLowerCase()}%`,`%${trimmed.toLowerCase()}%`,`%${trimmed.toLowerCase()}%`,`%${trimmed.toLowerCase()}%`,...englishFacets.params,limit]) : { values: [] };
+    const linkedResults: CorpusSearchResult[]=(linkedEnglishResult.values??[]).map(row=>({id:`search:tggsp-linked:${String(row.lineId)}`,resultType:'translation',textUnitId:String(row.textUnitId),sourceWorkId:String(row.sourceWorkId),title:String(row.title),subtitle:`${String(row.contributorName)} · Ang ${numberValue(row.ang)} · TGGSP linked meaning`,gurmukhi:String(row.gurmukhi),transliteration:String(row.transliteration),english:String(row.content),ang:numberValue(row.ang),contributorName:String(row.contributorName),lineId:String(row.lineId),matchKind:'analysis',providerContentTypes:['literal_translation_en']}));
+    const allAnalysis=[...linkedResults,...translationResults];
+    return { query: trimmed, mode: isGurmukhi ? 'gurmukhi' : allAnalysis.length > sabadResults.length ? 'english' : 'latin',
+      results: [...sabadResults, ...initialResults, ...allAnalysis].slice(0, limit), candidateForms: [...candidateMap.values()].slice(0, 12) };
   }
 
   async concordance(gurmukhi: string, filters: SearchFilters = defaultSearchFilters(), limit = 50, offset = 0): Promise<ConcordancePage> {
@@ -459,7 +472,7 @@ export class MobileCorpusGateway {
       FROM tggsp_collection c LEFT JOIN tggsp_collection_section s ON s.collection_code=c.code
       LEFT JOIN tggsp_line_alignment a ON a.collection_code=c.code
       GROUP BY c.code ORDER BY c.collection_order,c.title_en`);
-    return (result.values ?? []).map(row => ({ code:String(row.code),titleEn:String(row.titleEn),titlePa:String(row.titlePa),
+    return (result.values ?? []).map(row => ({ code:String(row.code),titleEn:preferredReadingTitle(String(row.titleEn)),titlePa:String(row.titlePa),
       collectionType:String(row.collectionType) as TggspCollectionSummary['collectionType'],collectionOrder:numberValue(row.collectionOrder),
       sectionCount:numberValue(row.sectionCount),translatedLineCount:numberValue(row.translatedLineCount) }));
   }
@@ -490,7 +503,7 @@ export class MobileCorpusGateway {
     const firstOrderBySection = new Map<number,number>();
     ordered.forEach((raw,index)=>{const order=numberValue(raw.sectionOrder);if(!firstOrderBySection.has(order))firstOrderBySection.set(order,index);});
     return { id:`tggsp:collection:${code}`,token:code,sourceWorkId:'source:G',gurmukhi:String(collection.titlePa),
-      transliteration:String(collection.titleEn),verseCount:enriched.length,attributionLabel:String(collection.attributionLabel),
+      transliteration:preferredReadingTitle(String(collection.titleEn)),verseCount:enriched.length,attributionLabel:String(collection.attributionLabel),
       tggspAvailable:enriched.some(line=>line.tggspTranslation),tggspTranslatedLines:enriched.filter(line=>line.tggspTranslation).length,
       introduction:String(collection.introduction),collectionType:String(collection.collectionType) as BaniView['collectionType'],
       sections:(sectionResult.values??[]).flatMap(row=>{const firstLineOrder=firstOrderBySection.get(numberValue(row.order));return firstLineOrder===undefined?[]:[{order:numberValue(row.order),title:String(row.title),author:String(row.author),firstLineOrder}];}),
@@ -506,26 +519,50 @@ export class MobileCorpusGateway {
     // in bounded batches instead of failing after the reader has opened.
     for(let start=0;start<canonicalIds.length;start+=400){const batch=canonicalIds.slice(start,start+400);const placeholders=batch.map(()=>'?').join(',');
       const [translationResult,termResult] = await Promise.all([
-        db.query(`SELECT m.canonical_line_id AS lineId,a.collection_code AS collectionCode,
-          a.literal_translation_en AS translation,a.translation_scope AS translationScope,
+        db.query(`SELECT m.canonical_line_id AS lineId,a.id AS passageId,a.anchor_line_id AS anchorId,
+          (SELECT COUNT(*) FROM tggsp_line_member mx WHERE mx.alignment_id=a.id) AS memberCount,
+          a.collection_code AS collectionCode,a.tggsp_transliteration AS tggspTransliteration,a.literal_translation_en AS translation,
+          a.literal_translation_pa AS translationPa,a.translation_scope AS translationScope,
           c.collection_type AS collectionType,c.collection_order AS collectionOrder
           FROM tggsp_line_member m JOIN tggsp_line_alignment a ON a.id=m.alignment_id
           JOIN tggsp_collection c ON c.code=a.collection_code
-          WHERE m.is_anchor=1 AND a.literal_translation_en<>'' AND m.canonical_line_id IN (${placeholders})
-          ORDER BY lineId,CASE WHEN a.collection_code=? THEN 0 WHEN c.collection_type='composition' THEN 1 ELSE 2 END,c.collection_order`,[...batch,preferredCode]),
+          WHERE a.translation_scope<>'passage' AND (a.tggsp_transliteration<>'' OR a.literal_translation_en<>'' OR a.literal_translation_pa<>'') AND m.canonical_line_id IN (${placeholders})
+          UNION ALL
+          SELECT visible.canonical_line_id AS lineId,passage.id AS passageId,passage.anchor_line_id AS anchorId,
+          (SELECT COUNT(DISTINCT grouped_member.canonical_line_id) FROM tggsp_line_alignment grouped
+            JOIN tggsp_line_member grouped_member ON grouped_member.alignment_id=grouped.id
+            WHERE grouped.collection_code=passage.collection_code AND grouped.section_id=passage.section_id AND grouped.subsection_id=passage.subsection_id) AS memberCount,
+          passage.collection_code AS collectionCode,current.tggsp_transliteration AS tggspTransliteration,
+          passage.literal_translation_en AS translation,passage.literal_translation_pa AS translationPa,
+          passage.translation_scope AS translationScope,c.collection_type AS collectionType,c.collection_order AS collectionOrder
+          FROM tggsp_line_member visible JOIN tggsp_line_alignment current ON current.id=visible.alignment_id
+          JOIN tggsp_line_alignment passage ON passage.collection_code=current.collection_code
+            AND passage.section_id=current.section_id AND passage.subsection_id=current.subsection_id AND passage.translation_scope='passage'
+          JOIN tggsp_collection c ON c.code=passage.collection_code
+          WHERE visible.canonical_line_id IN (${placeholders})`,[...batch,...batch]),
         db.query(`SELECT id,collection_code AS collectionCode,canonical_line_id AS lineId,headword,transliteration,
           meaning_en AS meaningEn,grammar_en AS grammarEn,etymology_en AS etymologyEn,
           meaning_pa AS meaningPa,grammar_pa AS grammarPa,etymology_pa AS etymologyPa
           FROM tggsp_line_term WHERE canonical_line_id IN (${placeholders}) ORDER BY lineId,headword`,batch)
       ]);translationRows.push(...(translationResult.values??[]));termRows.push(...(termResult.values??[]));}
+    translationRows.sort((left,right)=>{
+      const preferred=(row:DatabaseRow)=>String(row.collectionCode)===preferredCode?0:String(row.collectionType)==='composition'?1:2;
+      return String(left.lineId).localeCompare(String(right.lineId))||preferred(left)-preferred(right)||numberValue(left.collectionOrder)-numberValue(right.collectionOrder);
+    });
     const translations=new Map<string,DatabaseRow>();
     for(const row of translationRows)if(!translations.has(String(row.lineId)))translations.set(String(row.lineId),row);
     const terms=new Map<string,TggspLineTerm[]>();
     for(const row of termRows){const lineId=String(row.lineId);const selected=translations.get(lineId);if(selected&&String(row.collectionCode)!==String(selected.collectionCode))continue;const list=terms.get(lineId)??[];const term={id:String(row.id),headword:String(row.headword),transliteration:String(row.transliteration),meaningEn:String(row.meaningEn),grammarEn:String(row.grammarEn),etymologyEn:String(row.etymologyEn),meaningPa:String(row.meaningPa),grammarPa:String(row.grammarPa),etymologyPa:String(row.etymologyPa)};if(!list.some(item=>item.headword===term.headword&&item.meaningEn===term.meaningEn))list.push(term);terms.set(lineId,list);}
     return lines.map(line=>{const translation=translations.get(line.id);return {...line,
       tggspTranslation:translation?String(translation.translation):undefined,
+      tggspTransliteration:translation?String(translation.tggspTransliteration):undefined,
+      tggspTranslationPa:translation?String(translation.translationPa):undefined,
       tggspTranslationScope:translation?String(translation.translationScope) as CanonicalLine['tggspTranslationScope']:undefined,
-      tggspCollectionCode:translation?String(translation.collectionCode):undefined,tggspTerms:terms.get(line.id)??[]};});
+      tggspCollectionCode:translation?String(translation.collectionCode):undefined,
+      tggspPassageId:translation?String(translation.passageId):undefined,
+      tggspPassageAnchorId:translation?String(translation.anchorId):undefined,
+      tggspPassageMemberCount:translation?numberValue(translation.memberCount):undefined,
+      tggspTerms:terms.get(line.id)??[]};});
   }
 
   async sources(): Promise<SourceWorkOption[]> {
@@ -607,8 +644,33 @@ export class MobileCorpusGateway {
     const db = await this.db();
     const normal = query.trim().normalize('NFC');
     if (!normal) return [];
-    const result = await db.query(`SELECT DISTINCT g.id, g.headword, g.content, g.provider, g.review_status AS reviewStatus FROM glossary_entry g LEFT JOIN term_form t ON t.glossary_entry_id = g.id WHERE g.headword = ? OR t.comparison_form = ? OR lower(t.transliteration) = lower(?) LIMIT ?`, [normal, normal, normal, limit]);
-    return (result.values ?? []).map(row => ({ id: String(row.id), headword: String(row.headword), content: String(row.content), provider: String(row.provider), reviewStatus: String(row.reviewStatus) }));
+    const gurmukhi = /[\u0A00-\u0A7F]/u.test(normal);
+    const pattern = `%${normal.toLowerCase()}%`;
+    const termResult = await db.query(`SELECT MIN(id) AS id,headword,MIN(transliteration) AS transliteration,
+        MIN(meaning_en) AS meaningEn,MIN(grammar_en) AS grammarEn,MIN(etymology_en) AS etymologyEn,
+        MIN(meaning_pa) AS meaningPa,MIN(grammar_pa) AS grammarPa,MIN(etymology_pa) AS etymologyPa,
+        COUNT(DISTINCT canonical_line_id) AS frequency,
+        CASE WHEN ?=1 THEN 'gurmukhi' WHEN lower(MIN(transliteration)) LIKE ? THEN 'roman' ELSE 'english-concept' END AS matchKind
+      FROM tggsp_line_term
+      WHERE (?=1 AND headword LIKE ?) OR (?=0 AND (lower(transliteration) LIKE ? OR lower(meaning_en) LIKE ? OR lower(etymology_en) LIKE ?))
+      GROUP BY headword,meaning_en,grammar_en,etymology_en
+      ORDER BY CASE WHEN headword=? OR lower(MIN(transliteration))=lower(?) THEN 0 WHEN lower(MIN(transliteration)) LIKE lower(?) THEN 1 ELSE 2 END,
+        frequency DESC,headword LIMIT ?`,
+      [gurmukhi ? 1 : 0, pattern, gurmukhi ? 1 : 0, `${normal}%`, gurmukhi ? 1 : 0, pattern, pattern, pattern,
+        normal, normal, `${normal}%`, limit]);
+    const rows: GlossaryResult[] = (termResult.values ?? []).map(row => ({
+      id: String(row.id), headword: String(row.headword), transliteration: String(row.transliteration ?? ''),
+      meaningEn: String(row.meaningEn ?? ''), grammarEn: String(row.grammarEn ?? ''), etymologyEn: String(row.etymologyEn ?? ''),
+      meaningPa: String(row.meaningPa ?? ''), grammarPa: String(row.grammarPa ?? ''), etymologyPa: String(row.etymologyPa ?? ''),
+      frequency: numberValue(row.frequency), matchKind: String(row.matchKind) as GlossaryResult['matchKind'], content: '',
+      provider: 'Sikh Research Institute — The Guru Granth Sahib Project', reviewStatus: 'provider_published'
+    }));
+    if (rows.length || gurmukhi) return rows;
+    const fallback = await db.query(`SELECT id,headword,content,provider,review_status AS reviewStatus,
+        CASE WHEN lower(headword) LIKE ? THEN 'roman' ELSE 'english-concept' END AS matchKind
+      FROM glossary_entry WHERE lower(headword) LIKE ? OR lower(content) LIKE ? LIMIT ?`,
+      [`${normal.toLowerCase()}%`, pattern, pattern, limit]);
+    return (fallback.values ?? []).map(row => ({ id:String(row.id),headword:String(row.headword),content:String(row.content),provider:String(row.provider),reviewStatus:String(row.reviewStatus),matchKind:String(row.matchKind) as GlossaryResult['matchKind'] }));
   }
 
   private async tggspAvailableSearch(filters: SearchFilters, limit: number): Promise<CorpusSearchResponse> {
@@ -630,7 +692,7 @@ export class MobileCorpusGateway {
       subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)} · TGGSP analysis available`,
       gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
       ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: String(row.lineId),
-      matchKind: 'analysis', providerContentTypes: splitProviderTypes(row.providerTypes)
+      matchKind: 'analysis', providerContentTypes: splitProviderTypes(row.providerTypes).length ? splitProviderTypes(row.providerTypes) : ['tggsp-linked']
     }));
     return { query: '', mode: 'english', results, candidateForms: [] };
   }
@@ -817,7 +879,7 @@ function plainText(content: string): string {
 }
 
 function defaultSearchFilters(): SearchFilters {
-  return { sourceWorkId: 'all', raag: '', contributorId: '', tggspOnly: false, providerContentTypes: [] };
+  return { sourceWorkId: 'all', raag: '', contributorId: '', tggspOnly: false, tggspCoverage: '', providerContentTypes: [] };
 }
 
 function searchFacetSql(filters: SearchFilters, lineAlias: string, includeTggsp = true): { clause: string; params: unknown[] } {
@@ -829,10 +891,15 @@ function searchFacetSql(filters: SearchFilters, lineAlias: string, includeTggsp 
     clauses.push(`${lineAlias}.contributor_id IN (${BHAI_GURDAS_CONTRIBUTORS.map(() => '?').join(',')})`);
     params.push(...BHAI_GURDAS_CONTRIBUTORS);
   } else if (filters.contributorId) { clauses.push(`${lineAlias}.contributor_id = ?`); params.push(filters.contributorId); }
-  if (includeTggsp && (filters.tggspOnly || filters.providerContentTypes.length)) {
+  if (includeTggsp && (filters.tggspOnly || filters.tggspCoverage || filters.providerContentTypes.length)) {
     const types = filters.providerContentTypes;
-    clauses.push(`EXISTS (SELECT 1 FROM provider_content facet_pc WHERE facet_pc.text_unit_id = ${lineAlias}.text_unit_id${types.length ? ` AND facet_pc.content_type IN (${types.map(() => '?').join(',')})` : ''})`);
-    params.push(...types);
+    const coverage = filters.tggspCoverage || 'any';
+    if (coverage === 'translation') clauses.push(`EXISTS (SELECT 1 FROM tggsp_line_member facet_tm JOIN tggsp_line_alignment facet_ta ON facet_ta.id=facet_tm.alignment_id WHERE facet_tm.canonical_line_id=${lineAlias}.id AND (facet_ta.literal_translation_en<>'' OR facet_ta.literal_translation_pa<>''))`);
+    else if (coverage === 'word-analysis') clauses.push(`EXISTS (SELECT 1 FROM tggsp_line_term facet_tt WHERE facet_tt.canonical_line_id=${lineAlias}.id)`);
+    else if (coverage === 'extended' || types.length) {
+      clauses.push(`EXISTS (SELECT 1 FROM provider_content facet_pc WHERE facet_pc.text_unit_id = ${lineAlias}.text_unit_id${types.length ? ` AND facet_pc.content_type IN (${types.map(() => '?').join(',')})` : ''})`);
+      params.push(...types);
+    } else clauses.push(`(EXISTS (SELECT 1 FROM tggsp_line_member facet_tm WHERE facet_tm.canonical_line_id=${lineAlias}.id) OR EXISTS (SELECT 1 FROM tggsp_line_term facet_tt WHERE facet_tt.canonical_line_id=${lineAlias}.id) OR EXISTS (SELECT 1 FROM provider_content facet_pc WHERE facet_pc.text_unit_id=${lineAlias}.text_unit_id))`);
   }
   return { clause: clauses.length ? `AND ${clauses.join(' AND ')}` : '', params };
 }
@@ -844,4 +911,8 @@ function splitProviderTypes(value: unknown): string[] {
 function providerGroupTitle(id: string): string {
   const parts = id.split(':');
   return `${parts[1] ?? 'TGGSP'} · subsection ${parts[2] ?? 'unknown'} · record ${parts[3] ?? 'unknown'}`;
+}
+
+function preferredReadingTitle(value:string):string {
+  return /asa\s+(ki|di)\s+v(a|aa)r/i.test(value) ? 'Asa Di Vaar' : value;
 }

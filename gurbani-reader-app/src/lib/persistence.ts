@@ -4,8 +4,11 @@ import type { SearchFilters, SearchMode } from '../types';
 
 export interface ReaderPreferences {
   showTransliteration: boolean;
+  transliterationSource: 'banidb' | 'tggsp';
   showTranslation: boolean;
   showProviderLayers: boolean;
+  showWordAnalysis: boolean;
+  tggspLanguage: 'english' | 'panjabi' | 'both';
   theme: 'light' | 'paper' | 'sepia' | 'dark' | 'black';
   textScale: number;
   transliterationScale: number;
@@ -17,7 +20,11 @@ export interface ReaderPreferences {
   gurmukhiColor: string;
   latinColor: string;
   backgroundColor: string;
+  homeOrder: HomeModule[];
+  hiddenHomeModules: HomeModule[];
 }
+
+export type HomeModule = 'search' | 'banis' | 'ang' | 'dictionary' | 'recent' | 'explore';
 
 export interface PersonalData {
   bookmarks: string[];
@@ -27,6 +34,7 @@ export interface PersonalData {
   collections: PersonalCollection[];
   history: ReadingHistoryEntry[];
   savedSearches: SavedSearch[];
+  lastAngBySource: Record<string, number>;
 }
 
 export interface PersonalCollection { id: string; title: string; lineIds: string[]; createdAt: string; }
@@ -35,8 +43,11 @@ export interface SavedSearch { id: string; title: string; query: string; filters
 
 export const defaultPreferences: ReaderPreferences = {
   showTransliteration: true,
+  transliterationSource: 'tggsp',
   showTranslation: true,
   showProviderLayers: true,
+  showWordAnalysis: false,
+  tggspLanguage: 'english',
   theme: 'paper',
   textScale: 1,
   transliterationScale: 1,
@@ -58,7 +69,9 @@ export const defaultPreferences: ReaderPreferences = {
   },
   gurmukhiColor: '#18231f',
   latinColor: '#52635c',
-  backgroundColor: '#fbf7ed'
+  backgroundColor: '#fbf7ed',
+  homeOrder: ['search', 'banis', 'ang', 'dictionary', 'recent', 'explore'],
+  hiddenHomeModules: []
 };
 
 export const defaultPersonalData: PersonalData = {
@@ -68,7 +81,8 @@ export const defaultPersonalData: PersonalData = {
   readingPosition: null,
   collections: [],
   history: [],
-  savedSearches: []
+  savedSearches: [],
+  lastAngBySource: {}
 };
 
 export function usePersistentState<T>(key: string, initial: T): [T, (next: T | ((current: T) => T)) => void] {

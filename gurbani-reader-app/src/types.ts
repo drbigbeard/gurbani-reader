@@ -6,6 +6,7 @@ export interface SearchFilters {
   raag: string;
   contributorId: string;
   tggspOnly: boolean;
+  tggspCoverage?: '' | 'any' | 'translation' | 'word-analysis' | 'extended';
   providerContentTypes: string[];
 }
 
@@ -23,8 +24,13 @@ export interface CanonicalLine {
   raagId?: string;
   raag?: string;
   tggspTranslation?: string;
+  tggspTransliteration?: string;
+  tggspTranslationPa?: string;
   tggspTranslationScope?: 'line' | 'passage' | 'none';
   tggspCollectionCode?: string;
+  tggspPassageId?: string;
+  tggspPassageMemberCount?: number;
+  tggspPassageAnchorId?: string;
   tggspTerms?: TggspLineTerm[];
 }
 
@@ -198,7 +204,22 @@ export interface SourceWorkOption { id: string; title: string; maxAng: number; }
 export interface RankedForm { form: string; frequency: number; distinctLines: number; }
 export interface FrequencyPage { total: number; offset: number; limit: number; forms: RankedForm[]; }
 export interface ContributorSummary { id: string; name: string; type: string; unitCount: number; lineCount: number; }
-export interface GlossaryResult { id: string; headword: string; content: string; provider: string; reviewStatus: string; }
+export interface GlossaryResult {
+  id: string;
+  headword: string;
+  transliteration?: string;
+  meaningEn?: string;
+  grammarEn?: string;
+  etymologyEn?: string;
+  meaningPa?: string;
+  grammarPa?: string;
+  etymologyPa?: string;
+  frequency?: number;
+  matchKind?: 'gurmukhi' | 'roman' | 'english-concept';
+  content: string;
+  provider: string;
+  reviewStatus: string;
+}
 
 export interface Contributor {
   id: string;

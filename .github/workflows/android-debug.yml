@@ -1,4 +1,4 @@
-name: Build Android release input
+name: Build installable Android APK
 
 on:
   workflow_dispatch:
@@ -26,6 +26,11 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
+      - name: Preserve the private local-install signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: gurbani-reader-local-signing-v1
       - name: Restore versioned reading database
         run: npm run corpus:restore
       - run: npm ci
@@ -33,29 +38,33 @@ jobs:
       - run: npm run audit:rc
       - run: npm run build:native
       - run: npx cap sync android
-      - run: ./gradlew assembleRelease
+      - run: ./gradlew assembleDebug
         working-directory: gurbani-reader-app/android
-      - name: Align unsigned APK for 16 KB Android devices
+      - name: Verify signing and 16 KB alignment
         shell: bash
         run: |
           SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           ZIPALIGN="$(find "$SDK_ROOT/build-tools" -type f -name zipalign -print | sort -V | tail -n 1)"
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
           test -n "$ZIPALIGN"
           test -x "$ZIPALIGN"
-          "$ZIPALIGN" -P 16 -f -v 4 \
-            android/app/build/outputs/apk/release/app-release-unsigned.apk \
-            Gurbani-Reader-v0.11-rc3-aligned-unsigned-do-not-install.apk
+          test -n "$APKSIGNER"
+          test -x "$APKSIGNER"
           "$ZIPALIGN" -c -P 16 -v 4 \
-            Gurbani-Reader-v0.11-rc3-aligned-unsigned-do-not-install.apk
+            android/app/build/outputs/apk/debug/app-debug.apk
+          "$APKSIGNER" verify --verbose --print-certs \
+            android/app/build/outputs/apk/debug/app-debug.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk \
+            Gurbani-Reader-v0.12.0-rc1-Android.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Gurbani-Reader-v0.11-rc3-aligned-unsigned-build-input
-          path: gurbani-reader-app/Gurbani-Reader-v0.11-rc3-aligned-unsigned-do-not-install.apk
+          name: Gurbani-Reader-v0.12.0-rc1-Android
+          path: gurbani-reader-app/Gurbani-Reader-v0.12.0-rc1-Android.apk
           if-no-files-found: error
-      - name: Publish unsigned build input for private-key signing
+      - name: Publish installable APK
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v0.11.0-rc.3
+          TAG: v0.12.0-rc.1
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.11 RC 3" --notes "Inline TGGSP Translation, etymology, named-Bani crosswalks and ordered ceremony readings. The automated asset is unsigned; use the separately signed and verified APK supplied from the release process."
-          gh release upload "$TAG" Gurbani-Reader-v0.11-rc3-aligned-unsigned-do-not-install.apk --clobber
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.12 RC 1" --notes-file RELEASE_NOTES_v0.12-rc1.md
+          gh release upload "$TAG" Gurbani-Reader-v0.12.0-rc1-Android.apk --clobber

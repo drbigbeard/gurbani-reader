@@ -6,11 +6,8 @@ const themeBackground: Record<ReaderPreferences['theme'], string> = { paper: '#f
 
 export function TextControls({ preferences, setPreferences }: { preferences: ReaderPreferences; setPreferences: SetPreferences }) {
   const adjust = (key: 'textScale' | 'transliterationScale' | 'interpretationScale', delta: number) => setPreferences(current => ({ ...current, [key]: clamp(current[key] + delta, .55, 2) }));
-  return <details className="text-controls"><summary>Appearance & reading mode</summary><div className="control-grid">
+  return <div className="reader-controls"><details className="text-controls compact-control"><summary aria-label="Appearance">Aa</summary><div className="control-grid control-popover">
     <label className="mode-toggle"><span>View</span><select value={preferences.readerMode} onChange={event => setPreferences(current => ({ ...current, readerMode: event.target.value as ReaderPreferences['readerMode'] }))}><option value="reading">Reading — uninterrupted</option><option value="study">Study — line tools</option></select></label>
-    <label><input type="checkbox" checked={preferences.showTransliteration} onChange={event => setPreferences(current => ({ ...current, showTransliteration: event.target.checked }))} /> Show BaniDB transliteration</label>
-    <label><input type="checkbox" checked={preferences.showTranslation} onChange={event => setPreferences(current => ({ ...current, showTranslation: event.target.checked }))} /> Translation</label>
-    <label><input type="checkbox" checked={preferences.showProviderLayers} onChange={event => setPreferences(current => ({ ...current, showProviderLayers: event.target.checked }))} /> Show TGGSP sections when available</label>
     {preferences.readerMode === 'study' && <label><input type="checkbox" checked={preferences.wordMode} onChange={event => setPreferences(current => ({ ...current, wordMode: event.target.checked }))} /> Tap individual Gurmukhi words</label>}
     <Control label="Gurmukhi" value={preferences.textScale} decrease={() => adjust('textScale', -.1)} increase={() => adjust('textScale', .1)} />
     <Control label="Latin / English" value={preferences.transliterationScale} decrease={() => adjust('transliterationScale', -.1)} increase={() => adjust('transliterationScale', .1)} />
@@ -20,7 +17,14 @@ export function TextControls({ preferences, setPreferences }: { preferences: Rea
     <label>Background colour <input type="color" value={preferences.backgroundColor} onChange={event => setPreferences(current => ({ ...current, backgroundColor: event.target.value }))} /></label>
     <label>Gurmukhi colour <input type="color" value={preferences.gurmukhiColor} onChange={event => setPreferences(current => ({ ...current, gurmukhiColor: event.target.value }))} /></label>
     <label>Latin / English colour <input type="color" value={preferences.latinColor} onChange={event => setPreferences(current => ({ ...current, latinColor: event.target.value }))} /></label>
-  </div></details>;
+  </div></details><details className="text-controls compact-control"><summary aria-label="Reading layers">Layers</summary><div className="control-grid control-popover layers-popover">
+    <label><input type="checkbox" checked={preferences.showTransliteration} onChange={event => setPreferences(current => ({ ...current, showTransliteration: event.target.checked }))} /> Transliteration</label>
+    <label>Transliteration source<select value={preferences.transliterationSource} onChange={event => setPreferences(current => ({ ...current, transliterationSource: event.target.value as ReaderPreferences['transliterationSource'] }))}><option value="tggsp">TGGSP where available</option><option value="banidb">BaniDB</option></select></label>
+    <label><input type="checkbox" checked={preferences.showTranslation} onChange={event => setPreferences(current => ({ ...current, showTranslation: event.target.checked }))} /> TGGSP translation</label>
+    <label><input type="checkbox" checked={preferences.showWordAnalysis} onChange={event => setPreferences(current => ({ ...current, showWordAnalysis: event.target.checked }))} /> TGGSP meanings & etymology</label>
+    <label><input type="checkbox" checked={preferences.showProviderLayers} onChange={event => setPreferences(current => ({ ...current, showProviderLayers: event.target.checked }))} /> Commentary, transcreation & poetical dimension</label>
+    <label>TGGSP language<select value={preferences.tggspLanguage} onChange={event => setPreferences(current => ({ ...current, tggspLanguage: event.target.value as ReaderPreferences['tggspLanguage'] }))}><option value="english">English</option><option value="panjabi">Panjabi</option><option value="both">Both</option></select></label>
+  </div></details></div>;
 }
 
 function Control({ label, value, decrease, increase }: { label: string; value: number; decrease: () => void; increase: () => void }) {
