@@ -18,6 +18,7 @@ export interface CanonicalLine {
   ang: number;
   gurmukhi: string;
   transliteration: string;
+  bdbTranslation?: string;
   contributorId: string;
   contributorName?: string;
   providerLayers?: ProviderLayer[];

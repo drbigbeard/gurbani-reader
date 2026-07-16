@@ -1,6 +1,6 @@
 {
   "name": "gurbani-reader-app",
-  "version": "0.12.0-rc.1",
+  "version": "0.13.0-rc.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "build:native": "tsc -b && NATIVE_BUILD=true vite build",
     "check": "tsc -b --pretty false",
     "audit:pass1": "node scripts/audit-v011-pass1.mjs",
-    "audit:rc": "node scripts/audit-v012.mjs",
+    "audit:rc": "node scripts/audit-v013.mjs",
     "preview": "vite preview",
     "corpus:mobile-db": "node scripts/build-mobile-db.mjs",
     "corpus:upgrade-v2": "node scripts/upgrade-mobile-db-v2.mjs",
@@ -17,6 +17,8 @@
     "corpus:upgrade-v3": "node scripts/upgrade-mobile-db-v3.mjs",
     "data:upgrade-v4": "node scripts/upgrade-mobile-db-v4.mjs",
     "data:upgrade-v5": "node scripts/upgrade-mobile-db-v5.mjs",
+    "data:fetch-v013": "node scripts/fetch-v013-snapshot.mjs",
+    "data:upgrade-v6": "node scripts/upgrade-mobile-db-v6.mjs",
     "corpus:restore": "node scripts/restore-corpus-pack.mjs",
     "native:sync": "npm run build:native && cap sync",
     "android:open": "cap open android",
@@ -38,7 +40,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "6.0.3",
-    "typescript": "7.0.2",
+    "typescript": "5.9.3",
     "vite": "8.1.4",
     "vite-plugin-pwa": "1.3.0"
   }

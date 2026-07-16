@@ -105,7 +105,7 @@ export class MobileCorpusGateway {
   async getTextUnit(textUnitId: string): Promise<ShabadView> {
     const db = await this.db();
     const [unitResult, lineResult, layerResult] = await Promise.all([
-      db.query(`SELECT u.id, u.source_work_id AS sourceWorkId, COALESCE(u.title, 'Sabad') AS title,
+      db.query(`SELECT u.id, u.source_work_id AS sourceWorkId, COALESCE(u.title, 'Shabad') AS title,
           COALESCE(MIN(l.contributor_id), '') AS contributorId,
           COALESCE(MIN(c.preferred_name), 'Unknown contributor') AS contributorName,
           COALESCE(MIN(l.ang), 1) AS firstAng, COALESCE(MAX(l.ang), 1) AS lastAng,
@@ -142,7 +142,7 @@ export class MobileCorpusGateway {
       ? `l.contributor_id IN (${BHAI_GURDAS_CONTRIBUTORS.map(() => '?').join(',')})` : 'l.contributor_id = ?';
     const contributorParams = contributorId === COMBINED_BHAI_GURDAS_ID ? BHAI_GURDAS_CONTRIBUTORS : [contributorId];
     const result = await db.query(`SELECT u.id, u.source_work_id AS sourceWorkId,
-        COALESCE(u.title, 'Sabad') AS title, ? AS contributorId,
+        COALESCE(u.title, 'Shabad') AS title, ? AS contributorId,
         ${contributorId === COMBINED_BHAI_GURDAS_ID ? "'Bhai Gurdas Ji'" : "COALESCE(c.preferred_name, 'Unknown contributor')"} AS contributorName,
         MIN(l.ang) AS firstAng, MAX(l.ang) AS lastAng, COUNT(l.id) AS lineCount,
         COALESCE(MIN(l.raag), 'Unclassified') AS raag,
@@ -171,7 +171,7 @@ export class MobileCorpusGateway {
     const lineResult = await db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
         l.source_work_id AS sourceWorkId, l.ang, l.gurmukhi,
         COALESCE(l.transliteration, '') AS transliteration,
-        COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Sabad') AS title,
+        COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Shabad') AS title,
         COALESCE((SELECT group_concat(DISTINCT pc.content_type) FROM provider_content pc WHERE pc.text_unit_id = l.text_unit_id), '') AS providerTypes
       FROM canonical_line l JOIN text_unit u ON u.id = l.text_unit_id
       LEFT JOIN contributor c ON c.id = l.contributor_id
@@ -203,7 +203,7 @@ export class MobileCorpusGateway {
     const initialQuery = isGurmukhi ? trimmed.normalize('NFC').replaceAll(' ', '') : latinFold(trimmed).replaceAll(' ', '');
     const initialResult = initialQuery ? await db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
         l.source_work_id AS sourceWorkId, l.ang, l.gurmukhi, COALESCE(l.transliteration, '') AS transliteration,
-        COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Sabad') AS title,
+        COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Shabad') AS title,
         COALESCE((SELECT group_concat(DISTINCT pc.content_type) FROM provider_content pc WHERE pc.text_unit_id = l.text_unit_id), '') AS providerTypes
       FROM line_search_index idx JOIN canonical_line l ON l.id = idx.line_id
       JOIN text_unit u ON u.id = l.text_unit_id LEFT JOIN contributor c ON c.id = l.contributor_id
@@ -238,7 +238,7 @@ export class MobileCorpusGateway {
     const englishFacets = searchFacetSql(filters, 'l');
     const englishResult = !isGurmukhi ? await db.query(`SELECT p.id, p.text_unit_id AS textUnitId,
         p.content_type AS contentType, p.content, u.source_work_id AS sourceWorkId,
-        COALESCE(u.title, 'Analysed Sabad') AS title,
+        COALESCE(u.title, 'Analysed Shabad') AS title,
         COALESCE(MIN(l.ang), 1) AS ang, COALESCE(MIN(c.preferred_name), '') AS contributorName,
         COALESCE(MIN(l.id), '') AS lineId,
         COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = p.text_unit_id ORDER BY x.ang, x.line_order LIMIT 1), '') AS gurmukhi,
@@ -258,7 +258,7 @@ export class MobileCorpusGateway {
     }));
     const linkedEnglishResult = !isGurmukhi ? await db.query(`SELECT l.id AS lineId,l.text_unit_id AS textUnitId,
         l.source_work_id AS sourceWorkId,l.ang,l.gurmukhi,COALESCE(l.transliteration,'') AS transliteration,
-        COALESCE(c.preferred_name,'') AS contributorName,COALESCE(u.title,'Sabad') AS title,
+        COALESCE(c.preferred_name,'') AS contributorName,COALESCE(u.title,'Shabad') AS title,
         COALESCE(MIN(CASE WHEN lower(tt.meaning_en) LIKE ? THEN tt.meaning_en END),
           MIN(CASE WHEN lower(a.literal_translation_en) LIKE ? THEN a.literal_translation_en END),'') AS content
       FROM canonical_line l JOIN text_unit u ON u.id=l.text_unit_id LEFT JOIN contributor c ON c.id=l.contributor_id
@@ -268,7 +268,16 @@ export class MobileCorpusGateway {
       GROUP BY l.id ORDER BY CASE l.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END,l.ang,l.line_order LIMIT ?`,
       [`%${trimmed.toLowerCase()}%`,`%${trimmed.toLowerCase()}%`,`%${trimmed.toLowerCase()}%`,`%${trimmed.toLowerCase()}%`,`%${trimmed.toLowerCase()}%`,...englishFacets.params,limit]) : { values: [] };
     const linkedResults: CorpusSearchResult[]=(linkedEnglishResult.values??[]).map(row=>({id:`search:tggsp-linked:${String(row.lineId)}`,resultType:'translation',textUnitId:String(row.textUnitId),sourceWorkId:String(row.sourceWorkId),title:String(row.title),subtitle:`${String(row.contributorName)} · Ang ${numberValue(row.ang)} · TGGSP linked meaning`,gurmukhi:String(row.gurmukhi),transliteration:String(row.transliteration),english:String(row.content),ang:numberValue(row.ang),contributorName:String(row.contributorName),lineId:String(row.lineId),matchKind:'analysis',providerContentTypes:['literal_translation_en']}));
-    const allAnalysis=[...linkedResults,...translationResults];
+    const baniDbEnglishResult = !isGurmukhi ? await db.query(`SELECT l.id AS lineId,l.text_unit_id AS textUnitId,
+        l.source_work_id AS sourceWorkId,l.ang,l.gurmukhi,COALESCE(l.transliteration,'') AS transliteration,
+        COALESCE(c.preferred_name,'') AS contributorName,COALESCE(u.title,'Shabad') AS title,t.content
+      FROM line_translation t JOIN canonical_line l ON l.id=t.canonical_line_id
+      JOIN text_unit u ON u.id=l.text_unit_id LEFT JOIN contributor c ON c.id=l.contributor_id
+      WHERE t.provider='banidb' AND t.language='en' AND lower(t.content) LIKE ? ${englishFacets.clause}
+      ORDER BY CASE l.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END,l.ang,l.line_order LIMIT ?`,
+      [`%${trimmed.toLowerCase()}%`,...englishFacets.params,limit]) : { values: [] };
+    const baniDbResults:CorpusSearchResult[]=(baniDbEnglishResult.values??[]).map(row=>({id:`search:banidb-translation:${String(row.lineId)}`,resultType:'translation',textUnitId:String(row.textUnitId),sourceWorkId:String(row.sourceWorkId),title:String(row.title),subtitle:`${String(row.contributorName)} · Ang ${numberValue(row.ang)} · BaniDB translation`,gurmukhi:String(row.gurmukhi),transliteration:String(row.transliteration),english:String(row.content),ang:numberValue(row.ang),contributorName:String(row.contributorName),lineId:String(row.lineId),matchKind:'analysis',providerContentTypes:[]}));
+    const allAnalysis=[...linkedResults,...baniDbResults,...translationResults];
     return { query: trimmed, mode: isGurmukhi ? 'gurmukhi' : allAnalysis.length > sabadResults.length ? 'english' : 'latin',
       results: [...sabadResults, ...initialResults, ...allAnalysis].slice(0, limit), candidateForms: [...candidateMap.values()].slice(0, 12) };
   }
@@ -402,7 +411,7 @@ export class MobileCorpusGateway {
   async raagUnits(raag: string, sourceWorkId = 'source:G', limit = 50, offset = 0, contributorId?: string): Promise<TextUnitSummary[]> {
     const db = await this.db();
     const result = await db.query(`SELECT u.id, u.source_work_id AS sourceWorkId,
-        COALESCE(u.title, 'Sabad') AS title, COALESCE(MIN(l.contributor_id), '') AS contributorId,
+        COALESCE(u.title, 'Shabad') AS title, COALESCE(MIN(l.contributor_id), '') AS contributorId,
         COALESCE(MIN(c.preferred_name), 'Unknown contributor') AS contributorName,
         MIN(l.ang) AS firstAng, MAX(l.ang) AS lastAng, COUNT(l.id) AS lineCount,
         COALESCE(MIN(l.raag), 'Unclassified') AS raag,
@@ -441,10 +450,11 @@ export class MobileCorpusGateway {
       db.query(`SELECT id, token, source_work_id AS sourceWorkId, gurmukhi,
         COALESCE(transliteration, '') AS transliteration, verse_count AS verseCount,
         attribution_label AS attributionLabel FROM bani_collection WHERE id = ?`, [baniId]),
-      db.query(`SELECT COALESCE(c.id,'bani-line:'||b.line_order) AS id,
-        COALESCE(c.source_work_id,'source:G') AS sourceWorkId, COALESCE(c.text_unit_id,'') AS textUnitId,
+      db.query(`SELECT COALESCE(c.id,'bani-line:'||b.bani_id||':'||b.line_order) AS id,
+        COALESCE(c.source_work_id,(SELECT source_work_id FROM bani_collection WHERE id=b.bani_id)) AS sourceWorkId, COALESCE(c.text_unit_id,'') AS textUnitId,
         b.line_order AS 'order', COALESCE(c.ang,0) AS ang, b.header_level AS headerLevel,
         b.paragraph_number AS paragraphNumber, b.gurmukhi, COALESCE(b.transliteration,'') AS transliteration,
+        COALESCE(NULLIF(b.translation_bdb_en,''),(SELECT content FROM line_translation t WHERE t.canonical_line_id=c.id AND t.provider='banidb' AND t.language='en'),'') AS bdbTranslation,
         COALESCE(c.contributor_id,'') AS contributorId, COALESCE(k.preferred_name,'') AS contributorName
         FROM bani_collection_line b LEFT JOIN bani_line_crosswalk x ON x.bani_id=b.bani_id AND x.line_order=b.line_order
         LEFT JOIN canonical_line c ON c.id=x.canonical_line_id LEFT JOIN contributor k ON k.id=c.contributor_id
@@ -513,12 +523,12 @@ export class MobileCorpusGateway {
   private async enrichTggsp(lines: CanonicalLine[], preferredCode = ''): Promise<CanonicalLine[]> {
     const canonicalIds = [...new Set(lines.map(line=>line.id).filter(id=>id&&!id.startsWith('bani-line:')))];
     if (!canonicalIds.length) return lines;
-    const db = await this.db(); const translationRows:DatabaseRow[]=[];const termRows:DatabaseRow[]=[];
+    const db = await this.db(); const translationRows:DatabaseRow[]=[];const termRows:DatabaseRow[]=[];const bdbRows:DatabaseRow[]=[];
     // Android SQLite commonly limits a statement to 999 bound variables.
     // Large named Banis (for example Sukhmani Sahib) must therefore be enriched
     // in bounded batches instead of failing after the reader has opened.
     for(let start=0;start<canonicalIds.length;start+=400){const batch=canonicalIds.slice(start,start+400);const placeholders=batch.map(()=>'?').join(',');
-      const [translationResult,termResult] = await Promise.all([
+      const [translationResult,termResult,bdbResult] = await Promise.all([
         db.query(`SELECT m.canonical_line_id AS lineId,a.id AS passageId,a.anchor_line_id AS anchorId,
           (SELECT COUNT(*) FROM tggsp_line_member mx WHERE mx.alignment_id=a.id) AS memberCount,
           a.collection_code AS collectionCode,a.tggsp_transliteration AS tggspTransliteration,a.literal_translation_en AS translation,
@@ -543,8 +553,9 @@ export class MobileCorpusGateway {
         db.query(`SELECT id,collection_code AS collectionCode,canonical_line_id AS lineId,headword,transliteration,
           meaning_en AS meaningEn,grammar_en AS grammarEn,etymology_en AS etymologyEn,
           meaning_pa AS meaningPa,grammar_pa AS grammarPa,etymology_pa AS etymologyPa
-          FROM tggsp_line_term WHERE canonical_line_id IN (${placeholders}) ORDER BY lineId,headword`,batch)
-      ]);translationRows.push(...(translationResult.values??[]));termRows.push(...(termResult.values??[]));}
+          FROM tggsp_line_term WHERE canonical_line_id IN (${placeholders}) ORDER BY lineId,headword`,batch),
+        db.query(`SELECT canonical_line_id AS lineId,content FROM line_translation WHERE provider='banidb' AND language='en' AND canonical_line_id IN (${placeholders})`,batch)
+      ]);translationRows.push(...(translationResult.values??[]));termRows.push(...(termResult.values??[]));bdbRows.push(...(bdbResult.values??[]));}
     translationRows.sort((left,right)=>{
       const preferred=(row:DatabaseRow)=>String(row.collectionCode)===preferredCode?0:String(row.collectionType)==='composition'?1:2;
       return String(left.lineId).localeCompare(String(right.lineId))||preferred(left)-preferred(right)||numberValue(left.collectionOrder)-numberValue(right.collectionOrder);
@@ -553,7 +564,9 @@ export class MobileCorpusGateway {
     for(const row of translationRows)if(!translations.has(String(row.lineId)))translations.set(String(row.lineId),row);
     const terms=new Map<string,TggspLineTerm[]>();
     for(const row of termRows){const lineId=String(row.lineId);const selected=translations.get(lineId);if(selected&&String(row.collectionCode)!==String(selected.collectionCode))continue;const list=terms.get(lineId)??[];const term={id:String(row.id),headword:String(row.headword),transliteration:String(row.transliteration),meaningEn:String(row.meaningEn),grammarEn:String(row.grammarEn),etymologyEn:String(row.etymologyEn),meaningPa:String(row.meaningPa),grammarPa:String(row.grammarPa),etymologyPa:String(row.etymologyPa)};if(!list.some(item=>item.headword===term.headword&&item.meaningEn===term.meaningEn))list.push(term);terms.set(lineId,list);}
+    const bdbTranslations=new Map(bdbRows.map(row=>[String(row.lineId),String(row.content)]));
     return lines.map(line=>{const translation=translations.get(line.id);return {...line,
+      bdbTranslation:line.bdbTranslation||bdbTranslations.get(line.id),
       tggspTranslation:translation?String(translation.translation):undefined,
       tggspTransliteration:translation?String(translation.tggspTransliteration):undefined,
       tggspTranslationPa:translation?String(translation.translationPa):undefined,
@@ -569,7 +582,7 @@ export class MobileCorpusGateway {
     const db = await this.db();
     const result = await db.query(`SELECT s.id, s.title, COALESCE(MAX(l.ang), 1) AS maxAng FROM source_work s LEFT JOIN canonical_line l ON l.source_work_id = s.id GROUP BY s.id ORDER BY CASE s.id WHEN 'source:G' THEN 0 ELSE 1 END, s.title`);
     return (result.values ?? []).map(row => ({ id: String(row.id),
-      title: String(row.id) === 'source:B' ? 'Vaaran Bhai Gurdas Ji' : String(row.title), maxAng: numberValue(row.maxAng) }));
+      title: String(row.id) === 'source:B' ? 'Vaaran Bhai Gurdas Ji' : String(row.id) === 'source:D' ? 'Dasam Bani · selected SGPC readings' : String(row.title), maxAng: numberValue(row.maxAng) }));
   }
 
   async corpusInfo(): Promise<CorpusInfo> {
@@ -616,7 +629,7 @@ export class MobileCorpusGateway {
   async textUnitsByIds(ids: string[]): Promise<TextUnitSummary[]> {
     if (!ids.length) return [];
     const db = await this.db(); const placeholders = ids.map(() => '?').join(',');
-    const result = await db.query(`SELECT u.id, u.source_work_id AS sourceWorkId, COALESCE(u.title, 'Sabad') AS title,
+    const result = await db.query(`SELECT u.id, u.source_work_id AS sourceWorkId, COALESCE(u.title, 'Shabad') AS title,
       COALESCE(MIN(l.contributor_id), '') AS contributorId, COALESCE(MIN(c.preferred_name), '') AS contributorName,
       MIN(l.ang) AS firstAng, MAX(l.ang) AS lastAng, COUNT(l.id) AS lineCount, COALESCE(MIN(l.raag), 'Unclassified') AS raag,
       COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id=u.id ORDER BY x.ang,x.line_order LIMIT 1),'') AS preview,
@@ -677,7 +690,7 @@ export class MobileCorpusGateway {
     const db = await this.db();
     const facets = searchFacetSql(filters, 'l');
     const result = await db.query(`SELECT u.id AS textUnitId, u.source_work_id AS sourceWorkId,
-        COALESCE(u.title, 'Analysed Sabad') AS title, MIN(l.id) AS lineId, MIN(l.ang) AS ang,
+        COALESCE(u.title, 'Analysed Shabad') AS title, MIN(l.id) AS lineId, MIN(l.ang) AS ang,
         COALESCE(MIN(c.preferred_name), '') AS contributorName,
         COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS gurmukhi,
         COALESCE((SELECT x.transliteration FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS transliteration,
@@ -713,7 +726,7 @@ export class MobileCorpusGateway {
     const providerTypeFilter = filters.providerContentTypes.length
       ? `AND p.content_type IN (${filters.providerContentTypes.map(() => '?').join(',')})` : '';
     const result = await db.query(`SELECT p.id, p.text_unit_id AS textUnitId, p.content_type AS contentType,
-        p.content, u.source_work_id AS sourceWorkId, COALESCE(u.title, 'Analysed Sabad') AS title,
+        p.content, u.source_work_id AS sourceWorkId, COALESCE(u.title, 'Analysed Shabad') AS title,
         COALESCE(MIN(l.ang), 1) AS ang, COALESCE(MIN(c.preferred_name), '') AS contributorName,
         COALESCE((SELECT x.gurmukhi FROM canonical_line x WHERE x.text_unit_id = p.text_unit_id
           ORDER BY x.ang, x.line_order LIMIT 1), '') AS gurmukhi

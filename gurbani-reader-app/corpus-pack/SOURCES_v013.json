@@ -1,0 +1,24 @@
+{
+  "format": "gurbani-reader-v0.13-source-scope",
+  "banidbSnapshot": {
+    "api": "https://api.banidb.com/v2",
+    "checksum": "4e2acb1ed189e79053d0a71ccd8df5cfd162a0e9d15b587d519895e8a7372d77",
+    "guruGranthSahibAngs": "1-1430",
+    "vaaranBhaiGurdasAngs": "B:1-40 plus S:1-28, presented as one author",
+    "selectedDasamAngs": "1-13,119,709-712,1386-1388",
+    "sgpcLengthSReadingIds": [4, 5, 6, 9, 21, 24]
+  },
+  "tggspSnapshot": {
+    "provider": "The Guru Granth Sahib Project, Sikh Research Institute",
+    "checksum": "db541c32a3700ee86b8a7d5673a07eb12c5b73e21afbf5ffecf6fa3a8d1e8b62",
+    "publishedEnglishCollections": 70,
+    "attribution": "Used with permission"
+  },
+  "installedDatabase": {
+    "file": "gurbani_reader_v6SQLite.db",
+    "sha256": "d63172a675d1b61f93e64e739e6846dc13f1cc5f03a586b2b8203b8efc5b1323",
+    "build": "Generated from the checksummed v5 base pack plus the verified BaniDB v0.13 snapshot",
+    "canonicalLines": 69191,
+    "baniDbEnglishLineTranslations": 68948
+  }
+}

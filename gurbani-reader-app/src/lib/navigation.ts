@@ -34,6 +34,10 @@ export function useNavigation(initial: Screen = 'home') {
     if (!Capacitor.isNativePlatform()) return;
     let remove: (() => Promise<void>) | undefined;
     void NativeApp.addListener('backButton', () => {
+      if (document.querySelector('.control-popover, .sheet-backdrop')) {
+        window.dispatchEvent(new CustomEvent('gurbani:close-overlay'));
+        return;
+      }
       const current = history.state as RouteState | null;
       if ((current?.depth ?? 0) > 0) {
         history.back();
