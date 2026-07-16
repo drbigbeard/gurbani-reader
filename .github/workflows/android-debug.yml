@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: gurbani-reader-app/package-lock.json
       - uses: actions/setup-java@v4
@@ -31,9 +31,16 @@ jobs:
         with:
           path: ~/.android/debug.keystore
           key: gurbani-reader-local-signing-v1
-      - name: Restore versioned reading database
-        run: npm run corpus:restore
       - run: npm ci
+      - name: Restore checksummed v5 base reading database
+        run: npm run corpus:restore
+      - name: Fetch and verify the v0.13 BaniDB source snapshot
+        env:
+          SNAPSHOT_GENERATED_AT: 2026-07-16T20:21:19.365Z
+          EXPECTED_SNAPSHOT_SHA256: 4e2acb1ed189e79053d0a71ccd8df5cfd162a0e9d15b587d519895e8a7372d77
+        run: npm run data:fetch-v013 -- "$RUNNER_TEMP/v013-banidb-snapshot"
+      - name: Build the v6 reading database from verified sources
+        run: npm run data:upgrade-v6 -- public/assets/databases/gurbani_reader_v5SQLite.db public/assets/databases/gurbani_reader_v6SQLite.db "$RUNNER_TEMP/v013-banidb-snapshot"
       - run: npm run check
       - run: npm run audit:rc
       - run: npm run build:native
@@ -51,25 +58,25 @@ jobs:
           test -f "$HOME/.android/debug.keystore"
           "$ZIPALIGN" -P 16 -f 4 \
             android/app/build/outputs/apk/debug/app-debug.apk \
-            Gurbani-Reader-v0.12.0-rc1-aligned.apk
+            Gurbani-Reader-v0.13.0-rc1-aligned.apk
           "$APKSIGNER" sign \
             --ks "$HOME/.android/debug.keystore" \
             --ks-key-alias androiddebugkey \
             --ks-pass pass:android \
             --key-pass pass:android \
-            --out Gurbani-Reader-v0.12.0-rc1-Android.apk \
-            Gurbani-Reader-v0.12.0-rc1-aligned.apk
-          "$ZIPALIGN" -c -P 16 -v 4 Gurbani-Reader-v0.12.0-rc1-Android.apk
-          "$APKSIGNER" verify --verbose --print-certs Gurbani-Reader-v0.12.0-rc1-Android.apk
+            --out Gurbani-Reader-v0.13.0-rc1-Android.apk \
+            Gurbani-Reader-v0.13.0-rc1-aligned.apk
+          "$ZIPALIGN" -c -P 16 -v 4 Gurbani-Reader-v0.13.0-rc1-Android.apk
+          "$APKSIGNER" verify --verbose --print-certs Gurbani-Reader-v0.13.0-rc1-Android.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Gurbani-Reader-v0.12.0-rc1-Android
-          path: gurbani-reader-app/Gurbani-Reader-v0.12.0-rc1-Android.apk
+          name: Gurbani-Reader-v0.13.0-rc1-Android
+          path: gurbani-reader-app/Gurbani-Reader-v0.13.0-rc1-Android.apk
           if-no-files-found: error
       - name: Publish installable APK
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v0.12.0-rc.1
+          TAG: v0.13.0-rc.1
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.12 RC 1" --notes-file ../RELEASE_NOTES_v0.12-rc1.md
-          gh release upload "$TAG" Gurbani-Reader-v0.12.0-rc1-Android.apk --clobber
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.13 RC 1" --notes-file ../RELEASE_NOTES_v0.13-rc1.md
+          gh release upload "$TAG" Gurbani-Reader-v0.13.0-rc1-Android.apk --clobber

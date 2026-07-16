@@ -5,7 +5,7 @@ import type { SearchFilters, SearchMode } from '../types';
 export interface ReaderPreferences {
   showTransliteration: boolean;
   transliterationSource: 'banidb' | 'tggsp';
-  showTranslation: boolean;
+  translationSource: 'off' | 'banidb' | 'tggsp';
   showProviderLayers: boolean;
   showWordAnalysis: boolean;
   tggspLanguage: 'english' | 'panjabi' | 'both';
@@ -20,6 +20,7 @@ export interface ReaderPreferences {
   gurmukhiColor: string;
   latinColor: string;
   backgroundColor: string;
+  gurmukhiWeight: 'normal' | 'bold';
   homeOrder: HomeModule[];
   hiddenHomeModules: HomeModule[];
 }
@@ -44,7 +45,7 @@ export interface SavedSearch { id: string; title: string; query: string; filters
 export const defaultPreferences: ReaderPreferences = {
   showTransliteration: true,
   transliterationSource: 'tggsp',
-  showTranslation: true,
+  translationSource: 'tggsp',
   showProviderLayers: true,
   showWordAnalysis: false,
   tggspLanguage: 'english',
@@ -70,6 +71,7 @@ export const defaultPreferences: ReaderPreferences = {
   gurmukhiColor: '#18231f',
   latinColor: '#52635c',
   backgroundColor: '#fbf7ed',
+  gurmukhiWeight: 'normal',
   homeOrder: ['search', 'banis', 'ang', 'dictionary', 'recent', 'explore'],
   hiddenHomeModules: []
 };

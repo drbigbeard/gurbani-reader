@@ -13,7 +13,7 @@ export function ProviderLayers({ layers, visibility, setVisibility, scale = 1 }:
   layers: ProviderLayer[]; visibility: Record<string, boolean>;
   setVisibility: (contentType: string, visible: boolean) => void; scale?: number;
 }) {
-  if (!layers.length) return <p className="empty">No TGGSP analysis is mapped to this Sabad.</p>;
+  if (!layers.length) return <p className="empty">No TGGSP analysis is mapped to this Shabad.</p>;
   const available = new Set(layers.map(layer => layer.contentType));
   const explicitlyShown = layers.filter(layer => visibility[layer.contentType]);
   const fallback = layers.find(layer => layer.contentType === 'literal_translation_en')
@@ -24,7 +24,7 @@ export function ProviderLayers({ layers, visibility, setVisibility, scale = 1 }:
   return <section className="provider-layers"><header><div><span className="eyebrow">Research & interpretation</span><h2>The Guru Granth Sahib Project</h2></div></header>
     <details className="layer-picker"><summary>Choose visible sections ({shown.length})</summary><div>{order.map(type => <label key={type} className={!available.has(type) ? 'unavailable' : ''}><input type="checkbox" disabled={!available.has(type)} checked={available.has(type) && Boolean(visibility[type])} onChange={event => setVisibility(type, event.target.checked)} />{labels[type]}</label>)}</div></details>
     {shown.map(layer => <details className="provider-layer" key={layer.id} open><summary><strong>{labels[layer.contentType] ?? humanise(layer.contentType)}</strong></summary><div className={layer.contentType.endsWith('_pa') || layer.contentType === 'reference_gurmukhi' ? 'gurmukhi provider-body' : 'provider-body'} style={{ fontSize: `${scale}em` }}><ProviderContent content={layer.content} /></div></details>)}
-    {!explicitlyShown.length && shown.length > 0 && <p className="analysis-fallback">No selected section is available for this Sabad, so the first available section is shown.</p>}
+    {!explicitlyShown.length && shown.length > 0 && <p className="analysis-fallback">No selected section is available for this Shabad, so the first available section is shown.</p>}
   </section>;
 }
 
