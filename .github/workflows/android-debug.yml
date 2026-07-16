@@ -66,5 +66,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: v0.12.0-rc.1
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.12 RC 1" --notes-file RELEASE_NOTES_v0.12-rc1.md
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.12 RC 1" --notes-file ../RELEASE_NOTES_v0.12-rc1.md
           gh release upload "$TAG" Gurbani-Reader-v0.12.0-rc1-Android.apk --clobber
