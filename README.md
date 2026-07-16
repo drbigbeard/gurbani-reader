@@ -11,8 +11,8 @@ Local-first Android and iOS Gurbani reader, corpus pipeline and scholarly enrich
 
 Large corpus snapshots, generated analysis indexes and mobile SQLite databases are release artifacts and are intentionally excluded from Git. The versioned repository contains schemas, ingestion code, tests, fixtures, manifests documentation and native application source.
 
-Canonical corpus data is powered by BaniDB, a Khalis Foundation initiative. SikhRI/TGGSP content is maintained as separately attributed provider layers and is used with permission.
+Canonical Gurbani data is powered by BaniDB, a Khalis Foundation initiative. SikhRI/TGGSP content is maintained as separately attributed provider material and is used with permission.
 
 ## Current checkpoint
 
-`v0.11.0-rc.2` combines all four planned alphas into two implementation passes. It includes native Android Back handling, separate personal data, a full in-app Gurmukhi keyboard, universal faceted search, scope-preserving counts and concordance, exact-line opening, repaired SikhRI/TGGSP display, complete paginated frequency browsing, structured Browse and Saved areas, notes, collections, history, saved searches, backup/import, direct references, adaptive accessibility work and a permanent Android signing identity. RC 2 also makes 16 KB APK alignment verification a required Android release gate.
+`v0.12.0-rc.1` adds a customisable Home screen, live universal search, Gurmukhi keyboard access, Roman and experimental English-concept dictionary lookup, explicit All-text search scope, richer TGGSP availability filters, compact reader controls, last-Ang resume, independent TGGSP layers and languages, and correctly labelled line-versus-passage translations. The Android workflow now produces a signed, installable, 16 KB-alignment-verified local APK.
