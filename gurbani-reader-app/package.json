@@ -1,6 +1,6 @@
 {
   "name": "gurbani-reader-app",
-  "version": "0.15.0-rc.1",
+  "version": "0.16.0-rc.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,9 @@
     "build:native": "tsc -b && NATIVE_BUILD=true vite build",
     "check": "tsc -b --pretty false",
     "audit:pass1": "node scripts/audit-v011-pass1.mjs",
-    "audit:rc": "node scripts/audit-v015.mjs",
+    "audit:rc": "node scripts/audit-v016.mjs",
+    "audit:contrast": "node scripts/audit-contrast-v016.mjs",
+    "audit:themes": "node scripts/audit-themes-v016.mjs",
     "search:benchmark": "node scripts/search-benchmark-v015.mjs",
     "preview": "vite preview",
     "corpus:mobile-db": "node scripts/build-mobile-db.mjs",
@@ -34,6 +36,7 @@
     "@capacitor/core": "8.4.1",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/share": "^8.0.1",
+    "material-symbols": "^0.45.8",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },

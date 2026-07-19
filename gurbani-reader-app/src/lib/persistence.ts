@@ -1,33 +1,39 @@
-import { useCallback, useEffect, useState } from 'react';
-import { personalStoreSupported, readPersonalState, writePersonalState } from './personal-store';
-import type { SearchFilters, SearchMode } from '../types';
+import { useCallback, useEffect, useState } from "react";
+import {
+  personalStoreSupported,
+  readPersonalState,
+  writePersonalState,
+} from "./personal-store";
+import type { SearchFilters, SearchMode } from "../types";
 
 export interface ReaderPreferences {
   showTransliteration: boolean;
-  transliterationSource: 'banidb' | 'tggsp';
-  translationSource: 'off' | 'banidb' | 'tggsp';
+  transliterationSource: "banidb" | "tggsp";
+  translationSource: "off" | "banidb" | "tggsp";
   showProviderLayers: boolean;
   showWordAnalysis: boolean;
-  tggspLanguage: 'english' | 'panjabi' | 'both';
-  theme: 'light' | 'paper' | 'sepia' | 'dark' | 'black';
-  accent: 'indigo' | 'burgundy' | 'slate' | 'forest';
+  tggspLanguage: "english" | "panjabi" | "both";
+  theme: "light" | "paper" | "sepia" | "dark" | "black";
+  accent: "indigo" | "burgundy" | "slate" | "forest";
   textScale: number;
   transliterationScale: number;
   interpretationScale: number;
   lineSpacing: number;
   wordMode: boolean;
-  readerMode: 'reading' | 'study';
+  readerMode: "reading" | "study";
   providerLayerVisibility: Record<string, boolean>;
   gurmukhiColor: string;
   latinColor: string;
   backgroundColor: string;
-  gurmukhiWeight: 'normal' | 'bold';
+  gurmukhiWeight: "normal" | "bold";
   homeOrder: HomeModule[];
   hiddenHomeModules: HomeModule[];
   onboardingComplete: boolean;
+  showExperimentalFeatures: boolean;
 }
 
-export type HomeModule = 'search' | 'banis' | 'ang' | 'dictionary' | 'recent' | 'explore';
+export type HomeModule =
+  "search" | "banis" | "ang" | "dictionary" | "recent" | "explore";
 
 export interface PersonalData {
   bookmarks: string[];
@@ -43,27 +49,55 @@ export interface PersonalData {
   myBaniIds: string[];
 }
 
-export interface PersonalCollection { id: string; title: string; lineIds: string[]; createdAt: string; }
-export interface ReadingHistoryEntry { textUnitId: string; lineId: string | null; visitedAt: string; }
-export interface SearchHistoryEntry { id: string; query: string; filters: SearchFilters; mode: SearchMode; searchedAt: string; }
-export interface SavedSearch { id: string; title: string; query: string; filters: SearchFilters; mode: SearchMode; }
-export interface KeertanIdentificationTest { id: string; createdAt: string; source: 'nearby-audio' | 'same-device-speaker'; heard: string[]; resultLineIds: string[]; verdict: 'unreviewed' | 'correct' | 'wrong' | 'no-match'; }
+export interface PersonalCollection {
+  id: string;
+  title: string;
+  lineIds: string[];
+  createdAt: string;
+}
+export interface ReadingHistoryEntry {
+  textUnitId: string;
+  lineId: string | null;
+  visitedAt: string;
+}
+export interface SearchHistoryEntry {
+  id: string;
+  query: string;
+  filters: SearchFilters;
+  mode: SearchMode;
+  searchedAt: string;
+}
+export interface SavedSearch {
+  id: string;
+  title: string;
+  query: string;
+  filters: SearchFilters;
+  mode: SearchMode;
+}
+export interface KeertanIdentificationTest {
+  id: string;
+  createdAt: string;
+  source: "nearby-audio" | "same-device-speaker";
+  heard: string[];
+  resultLineIds: string[];
+  verdict: "unreviewed" | "correct" | "wrong" | "no-match";
+}
 
 export const defaultPreferences: ReaderPreferences = {
   showTransliteration: true,
-  transliterationSource: 'tggsp',
-  translationSource: 'tggsp',
+  transliterationSource: "tggsp",
+  translationSource: "tggsp",
   showProviderLayers: true,
   showWordAnalysis: false,
-  tggspLanguage: 'english',
-  theme: 'paper',
-  accent: 'indigo',
+  tggspLanguage: "english",
+  theme: "paper",
+  accent: "indigo",
   textScale: 1,
   transliterationScale: 1,
   interpretationScale: 1,
   lineSpacing: 1.7,
   wordMode: false,
-  readerMode: 'reading',
+  readerMode: "reading",
   providerLayerVisibility: {
     reference_gurmukhi: false,
     transliteration: true,
@@ -74,15 +108,16 @@ export const defaultPreferences: ReaderPreferences = {
     commentary_pa: false,
     commentary_en: false,
     poetical_dimension_pa: false,
-    poetical_dimension_en: false
+    poetical_dimension_en: false,
   },
-  gurmukhiColor: '#18231f',
-  latinColor: '#52635c',
-  backgroundColor: '#fbf7ed',
-  gurmukhiWeight: 'normal',
-  homeOrder: ['search', 'banis', 'ang', 'dictionary', 'recent', 'explore'],
+  gurmukhiColor: "#18231f",
+  latinColor: "#52635c",
+  backgroundColor: "#fbf7ed",
+  gurmukhiWeight: "normal",
+  homeOrder: ["search", "banis", "ang", "dictionary", "recent", "explore"],
   hiddenHomeModules: [],
-  onboardingComplete: false
+  onboardingComplete: false,
+  showExperimentalFeatures: true,
 };
 
 export const defaultPersonalData: PersonalData = {
@@ -96,40 +131,58 @@ export const defaultPersonalData: PersonalData = {
   savedSearches: [],
   lastAngBySource: {},
   keertanTests: [],
-  myBaniIds: []
+  myBaniIds: [],
 };
 
-export function usePersistentState<T>(key: string, initial: T): [T, (next: T | ((current: T) => T)) => void] {
+export function usePersistentState<T>(
+  key: string,
+  initial: T,
+): [T, (next: T | ((current: T) => T)) => void] {
   const [value, setValue] = useState<T>(() => readValue(key, initial));
   const [nativeReady, setNativeReady] = useState(!personalStoreSupported());
 
   useEffect(() => {
     if (!personalStoreSupported()) return;
     let active = true;
-    void readPersonalState<T>(key).then(stored => {
-      if (!active) return;
-      if (stored) setValue(current => mergeValue(current, stored));
-      else void writePersonalState(key, readValue(key, initial));
-      setNativeReady(true);
-    }).catch(() => setNativeReady(true));
-    return () => { active = false; };
+    void readPersonalState<T>(key)
+      .then((stored) => {
+        if (!active) return;
+        if (stored) setValue((current) => mergeValue(current, stored));
+        else void writePersonalState(key, readValue(key, initial));
+        setNativeReady(true);
+      })
+      .catch(() => setNativeReady(true));
+    return () => {
+      active = false;
+    };
   }, [initial, key]);
 
   useEffect(() => {
-    try { window.localStorage.setItem(key, JSON.stringify(value)); }
-    catch { /* The application remains usable when private storage is unavailable. */ }
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      /* The application remains usable when private storage is unavailable. */
+    }
     if (nativeReady) void writePersonalState(key, value);
   }, [key, nativeReady, value]);
 
   const update = useCallback((next: T | ((current: T) => T)) => {
-    setValue(current => typeof next === 'function' ? (next as (current: T) => T)(current) : next);
+    setValue((current) =>
+      typeof next === "function" ? (next as (current: T) => T)(current) : next,
+    );
   }, []);
 
   return [value, update];
 }
 
 function mergeValue<T>(fallback: T, stored: T): T {
-  if (fallback && stored && typeof fallback === 'object' && typeof stored === 'object' && !Array.isArray(fallback)) {
+  if (
+    fallback &&
+    stored &&
+    typeof fallback === "object" &&
+    typeof stored === "object" &&
+    !Array.isArray(fallback)
+  ) {
     return { ...fallback, ...stored };
   }
   return stored;
@@ -145,5 +198,7 @@ function readValue<T>(key: string, fallback: T): T {
 }
 
 export function toggleValue(values: string[], value: string): string[] {
-  return values.includes(value) ? values.filter(item => item !== value) : [...values, value];
+  return values.includes(value)
+    ? values.filter((item) => item !== value)
+    : [...values, value];
 }

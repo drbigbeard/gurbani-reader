@@ -1,12 +1,26 @@
-export type Screen = 'home' | 'read' | 'sabad' | 'bani' | 'search' | 'word' | 'browse' | 'contributor' | 'raag' | 'tggsp' | 'glossary' | 'saved' | 'sources';
-export type SearchMode = 'auto' | 'theme';
+export type Screen =
+  | "home"
+  | "read"
+  | "sabad"
+  | "bani"
+  | "search"
+  | "word"
+  | "browse"
+  | "contributor"
+  | "raag"
+  | "tggsp"
+  | "glossary"
+  | "saved"
+  | "settings"
+  | "sources";
+export type SearchMode = "auto" | "theme";
 
 export interface SearchFilters {
-  sourceWorkId: 'all' | string;
+  sourceWorkId: "all" | string;
   raag: string;
   contributorId: string;
   tggspOnly: boolean;
-  tggspCoverage?: '' | 'any' | 'translation' | 'word-analysis' | 'extended';
+  tggspCoverage?: "" | "any" | "translation" | "word-analysis" | "extended";
   providerContentTypes: string[];
 }
 
@@ -27,7 +41,7 @@ export interface CanonicalLine {
   tggspTranslation?: string;
   tggspTransliteration?: string;
   tggspTranslationPa?: string;
-  tggspTranslationScope?: 'line' | 'passage' | 'none';
+  tggspTranslationScope?: "line" | "passage" | "none";
   tggspCollectionCode?: string;
   tggspPassageId?: string;
   tggspPassageMemberCount?: number;
@@ -75,7 +89,7 @@ export interface ShabadView extends TextUnitSummary {
   providerLayers: ProviderLayer[];
 }
 
-export type SearchResultType = 'sabad' | 'translation' | 'glossary' | 'theme';
+export type SearchResultType = "sabad" | "translation" | "glossary" | "theme";
 
 export interface CorpusSearchResult {
   id: string;
@@ -90,14 +104,14 @@ export interface CorpusSearchResult {
   ang: number | null;
   contributorName: string;
   lineId: string | null;
-  matchKind: 'text' | 'phonetic' | 'first-letters' | 'analysis' | 'theme';
+  matchKind: "text" | "phonetic" | "first-letters" | "analysis" | "theme";
   providerContentTypes?: string[];
   searchScore?: number;
 }
 
 export interface CorpusSearchResponse {
   query: string;
-  mode: 'gurmukhi' | 'latin' | 'english' | 'first-letters' | 'theme';
+  mode: "gurmukhi" | "latin" | "english" | "first-letters" | "theme";
   results: CorpusSearchResult[];
   candidateForms: SearchCandidate[];
 }
@@ -168,19 +182,29 @@ export interface BaniLine {
   contributorId: string;
   contributorName?: string;
   tggspTranslation?: string;
-  tggspTranslationScope?: 'line' | 'passage' | 'none';
+  tggspTranslationScope?: "line" | "passage" | "none";
   tggspCollectionCode?: string;
   tggspTerms?: TggspLineTerm[];
 }
 
-export interface BaniSection { order: number; title: string; author: string; firstLineOrder: number; }
-export interface BaniView extends BaniSummary { lines: BaniLine[]; introduction?: string; sections?: BaniSection[]; collectionType?: 'bani' | 'composition' | 'ceremonial'; }
+export interface BaniSection {
+  order: number;
+  title: string;
+  author: string;
+  firstLineOrder: number;
+}
+export interface BaniView extends BaniSummary {
+  lines: BaniLine[];
+  introduction?: string;
+  sections?: BaniSection[];
+  collectionType?: "bani" | "composition" | "ceremonial";
+}
 
 export interface TggspCollectionSummary {
   code: string;
   titleEn: string;
   titlePa: string;
-  collectionType: 'composition' | 'ceremonial';
+  collectionType: "composition" | "ceremonial";
   collectionOrder: number;
   sectionCount: number;
   translatedLineCount: number;
@@ -201,11 +225,30 @@ export interface CorpusInfo {
   occurrenceCount: number;
 }
 
-export interface SourceWorkOption { id: string; title: string; maxAng: number; }
+export interface SourceWorkOption {
+  id: string;
+  title: string;
+  maxAng: number;
+}
 
-export interface RankedForm { form: string; frequency: number; distinctLines: number; }
-export interface FrequencyPage { total: number; offset: number; limit: number; forms: RankedForm[]; }
-export interface ContributorSummary { id: string; name: string; type: string; unitCount: number; lineCount: number; }
+export interface RankedForm {
+  form: string;
+  frequency: number;
+  distinctLines: number;
+}
+export interface FrequencyPage {
+  total: number;
+  offset: number;
+  limit: number;
+  forms: RankedForm[];
+}
+export interface ContributorSummary {
+  id: string;
+  name: string;
+  type: string;
+  unitCount: number;
+  lineCount: number;
+}
 export interface GlossaryResult {
   id: string;
   headword: string;
@@ -217,7 +260,7 @@ export interface GlossaryResult {
   grammarPa?: string;
   etymologyPa?: string;
   frequency?: number;
-  matchKind?: 'gurmukhi' | 'roman' | 'english-concept';
+  matchKind?: "gurmukhi" | "roman" | "english-concept";
   content: string;
   provider: string;
   reviewStatus: string;
@@ -226,7 +269,7 @@ export interface GlossaryResult {
 export interface Contributor {
   id: string;
   name: string;
-  type: 'guru' | 'bhagat' | 'bhatt' | 'author';
+  type: "guru" | "bhagat" | "bhatt" | "author";
 }
 
 export interface SearchCandidate {
@@ -248,5 +291,5 @@ export interface WordStats {
 export interface CoverageState {
   contentType: string;
   provider: string;
-  status: 'available' | 'not_published' | 'not_available' | 'alignment_review';
+  status: "available" | "not_published" | "not_available" | "alignment_review";
 }

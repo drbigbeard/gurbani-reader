@@ -1,0 +1,21 @@
+{
+  "version": "tggsp-themes-v1",
+  "positive": [
+    { "query": "ego", "theme": "ego" },
+    { "query": "diet", "theme": "diet" },
+    { "query": "meat", "theme": "diet" },
+    { "query": "vegetarian", "theme": "diet" },
+    { "query": "compassion", "theme": "compassion" },
+    { "query": "contentment", "theme": "contentment" },
+    { "query": "gender", "theme": "gender" },
+    { "query": "heaven", "theme": "afterlife" },
+    { "query": "hell", "theme": "afterlife" }
+  ],
+  "negative": [
+    "jo mange",
+    "anand bheya meree",
+    "satigur mera poora",
+    "ਆਨੰਦੁ ਭਇਆ",
+    "random purple bicycle"
+  ]
+}
