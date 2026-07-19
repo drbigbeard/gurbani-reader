@@ -27,6 +27,7 @@ assert(info.includes('<key>NSMicrophoneUsageDescription</key>'), 'Microphone pur
 assert(info.includes('<key>NSSpeechRecognitionUsageDescription</key>'), 'Speech-recognition purpose string is missing.');
 assert(project.includes('IPHONEOS_DEPLOYMENT_TARGET = 15.0;'), 'iOS 15 deployment target changed unexpectedly.');
 assert(project.includes('TARGETED_DEVICE_FAMILY = "1,2";'), 'Universal iPhone/iPad device family setting is missing.');
+assert(project.match(/PRODUCT_BUNDLE_IDENTIFIER = com\.drbigbeard\.gurbanireader;/g)?.length === 2, 'The iOS bundle identifier is not stable for Personal Team signing.');
 assert(html.includes('viewport-fit=cover'), 'Edge-to-edge iPhone safe-area viewport support is missing.');
 assert(css.includes('env(safe-area-inset-top)'), 'Top safe-area handling is missing.');
 assert(css.includes('env(safe-area-inset-bottom)'), 'Bottom safe-area handling is missing.');
