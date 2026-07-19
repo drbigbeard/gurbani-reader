@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "description": "v0.15 practical search regression set. Queries are household-approved spellings or representative recogniser transcripts.",
+  "positive": [
+    { "id": "roman-jo-mange", "query": "jo mange", "expectedGurmukhi": "ਜੋ ਮਾਗਹਿ ਠਾਕੁਰ ਅਪੁਨੇ ਤੇ" },
+    { "id": "roman-anand-variant", "query": "anand bheya meree", "expectedGurmukhi": "ਅਨੰਦੁ ਭਇਆ ਮੇਰੀ ਮਾਏ" },
+    { "id": "roman-mid-line", "query": "satigur mera poora", "expectedGurmukhi": "ਸਤਿਗੁਰੁ ਮੇਰਾ ਪੂਰਾ" },
+    { "id": "roman-long-vowels", "query": "anandu bhaia meri mae", "expectedGurmukhi": "ਅਨੰਦੁ ਭਇਆ ਮੇਰੀ ਮਾਏ" },
+    { "id": "roman-one-recognition-error", "query": "anand bheya curry meree mae", "expectedGurmukhi": "ਅਨੰਦੁ ਭਇਆ ਮੇਰੀ ਮਾਏ" },
+    { "id": "roman-gagan-thaal", "query": "gagan mein thaal ravi chand", "expectedGurmukhi": "ਗਗਨ ਮੈ ਥਾਲੁ ਰਵਿ ਚੰਦੁ" },
+    { "id": "roman-sukhmani", "query": "sukhmani sukh amrit prabh naam", "expectedGurmukhi": "ਸੁਖਮਨੀ ਸੁਖ ਅੰਮ੍ਰਿਤ ਪ੍ਰਭ ਨਾਮੁ" },
+    { "id": "roman-man-tu-jot", "query": "man tu jot saroop hai", "expectedGurmukhi": "ਮਨ ਤੂੰ ਜੋਤਿ ਸਰੂਪੁ ਹੈ" },
+    { "id": "roman-family-line", "query": "tu mera pita tu hai mera mata", "expectedGurmukhi": "ਤੂੰ ਮੇਰਾ ਪਿਤਾ ਤੂੰਹੈ ਮੇਰਾ ਮਾਤਾ" },
+    { "id": "roman-hum-nahi-change", "query": "hum nahi change bura nahi koe", "expectedGurmukhi": "ਹਮ ਨਹੀ ਚੰਗੇ ਬੁਰਾ ਨਹੀ ਕੋਇ" },
+    { "id": "roman-dasam-mitar", "query": "mitar pyare nu haal murida da kehna", "expectedGurmukhi": "ਮਿਤ੍ਰ ਪਿਆਰੇ ਨੂੰ ਹਾਲੁ ਮੁਰੀਦਾਂ ਦਾ ਕਹਣਾ" },
+    { "id": "roman-so-dar", "query": "so dar tera keha so ghar keha", "expectedGurmukhi": "ਸੋ ਦਰੁ ਤੇਰਾ ਕੇਹਾ ਸੋ ਘਰੁ ਕੇਹਾ" },
+    { "id": "gurmukhi-exact", "query": "ਅਨੰਦੁ ਭਇਆ ਮੇਰੀ ਮਾਏ", "expectedGurmukhi": "ਅਨੰਦੁ ਭਇਆ ਮੇਰੀ ਮਾਏ" },
+    { "id": "gurmukhi-matra-tolerant", "query": "ਅਨਦ ਭਇਆ ਮਰੀ ਮਾਏ", "expectedGurmukhi": "ਅਨੰਦੁ ਭਇਆ ਮੇਰੀ ਮਾਏ" },
+    { "id": "first-letters-start", "query": "ਅਭਮਮ", "expectedGurmukhi": "ਅਨੰਦੁ ਭਇਆ ਮੇਰੀ ਮਾਏ" },
+    { "id": "first-letters-anywhere", "query": "ਕਬਕਸਮਪ", "expectedGurmukhi": "ਸਤਿਗੁਰੁ ਮੇਰਾ ਪੂਰਾ" },
+    { "id": "roman-first-letters", "query": "abmmsmp", "expectedGurmukhi": "ਅਨੰਦੁ ਭਇਆ ਮੇਰੀ ਮਾਏ" }
+  ],
+  "negative": [
+    { "id": "negative-nonsense", "query": "zzqx vvvq" },
+    { "id": "negative-gurmukhi", "query": "ਖ਼ਜ਼ਫ਼ ਖ਼ਜ਼ਫ਼ ਖ਼ਜ਼ਫ਼" }
+  ]
+}
