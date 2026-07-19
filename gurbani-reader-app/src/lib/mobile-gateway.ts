@@ -3,6 +3,7 @@ import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@cap
 import { lines, phoneticCandidates } from '../data/fixture';
 import type { BaniSummary, BaniView, CanonicalLine, ConcordancePage, ContributorSummary, CorpusInfo, CorpusSearchResult, CorpusSearchResponse, FrequencyPage, GlossaryResult, GroupedFrequency, ProviderAnalysis, ProviderCoverage, ProviderLayer, RaagContributorSummary, RaagSummary, RankedForm, RelatedForm, SearchCandidate, SearchFilters, SearchMode, ShabadView, SourceWorkOption, TextUnitSummary, TggspCollectionSummary, TggspLineTerm, WordStats } from '../types';
 import { MOBILE_DATABASE_NAME, MOBILE_SCHEMA_SQL, MOBILE_SCHEMA_VERSION } from './mobile-schema';
+import { buildGurmukhiFtsQuery, buildRomanFtsQuery, containsGurmukhi, looseGurmukhi, normalizeGurmukhi, normalizeRoman, phoneticWord, scoreSearchCandidate } from './search-core';
 
 type DatabaseRow = Record<string, unknown>;
 const BHAI_GURDAS_CONTRIBUTORS = ['contributor:banidb:22', 'contributor:banidb:49'];
@@ -160,68 +161,67 @@ export class MobileCorpusGateway {
     const db = await this.db();
     const trimmed = query.trim();
     if (!trimmed) return filters.tggspOnly ? this.tggspAvailableSearch(filters, limit) : { query: '', mode: 'latin', results: [], candidateForms: [] };
-    const isGurmukhi = /[\u0A00-\u0A7F]/u.test(trimmed);
+    const isGurmukhi = containsGurmukhi(trimmed);
     if (mode === 'theme') return this.themeSearch(trimmed, filters, limit);
     const facets = searchFacetSql(filters, 'l');
-    const normalizedRoman = latinFold(trimmed);
-    const phonetic = phoneticRoman(normalizedRoman);
-    const lineSql = isGurmukhi ? `l.gurmukhi LIKE ?` : `l.id IN (
-      SELECT line_id FROM line_search_fts WHERE line_search_fts MATCH ? ORDER BY rank LIMIT 800
-    )`;
-    const lineParams = isGurmukhi ? [`%${trimmed.normalize('NFC')}%`] : [ftsRomanQuery(normalizedRoman, phonetic)];
-    const lineResult = await db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
-        l.source_work_id AS sourceWorkId, l.ang, l.gurmukhi,
+    const queryLines = (ftsQuery: string) => db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
+        l.source_work_id AS sourceWorkId, l.ang, l.line_order AS lineOrder, l.gurmukhi,
         COALESCE(l.transliteration, '') AS transliteration,
         COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Shabad') AS title,
         COALESCE((SELECT group_concat(DISTINCT pc.content_type) FROM provider_content pc WHERE pc.text_unit_id = l.text_unit_id), '') AS providerTypes
       FROM canonical_line l JOIN text_unit u ON u.id = l.text_unit_id
       LEFT JOIN contributor c ON c.id = l.contributor_id
-      WHERE (${lineSql}) ${facets.clause} ORDER BY CASE l.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END, l.ang, l.line_order LIMIT ?`,
-      [...lineParams, ...facets.params, Math.max(limit * 8, 240)]);
+      WHERE l.id IN (SELECT line_id FROM line_search_fts WHERE line_search_fts MATCH ? ORDER BY rank LIMIT 1800)
+        ${facets.clause}
+      ORDER BY CASE l.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END, l.ang, l.line_order LIMIT 1800`,
+      [ftsQuery, ...facets.params]);
+    let lineResult = await queryLines(isGurmukhi ? buildGurmukhiFtsQuery(trimmed) : buildRomanFtsQuery(trimmed));
+    if (!(lineResult.values ?? []).length) lineResult = await queryLines(isGurmukhi ? buildGurmukhiFtsQuery(trimmed, true) : buildRomanFtsQuery(trimmed, true));
 
-    const seenUnits = new Set<string>();
     const candidateMap = new Map<string, SearchCandidate>();
-    const sabadResults: CorpusSearchResult[] = [];
-    for (const raw of lineResult.values ?? []) {
-      const row = raw as DatabaseRow;
-      if (!isGurmukhi && !transliterationMatches(String(row.transliteration), trimmed)) continue;
-      for (const candidate of alignedCandidates(String(row.gurmukhi), String(row.transliteration), trimmed)) {
-        candidateMap.set(candidate.gurmukhi, candidate);
-      }
-      const unitId = String(row.textUnitId);
-      if (seenUnits.has(unitId)) continue;
-      seenUnits.add(unitId);
-      sabadResults.push({ id: `search:sabad:${unitId}`, resultType: 'sabad', textUnitId: unitId,
-        sourceWorkId: String(row.sourceWorkId), title: String(row.title),
-        subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)}`,
-        gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
-        ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: String(row.lineId),
-        matchKind: !isGurmukhi && latinFold(String(row.transliteration)).includes(normalizedRoman) ? 'text' : 'phonetic', providerContentTypes: splitProviderTypes(row.providerTypes) });
-      if (sabadResults.length >= limit) break;
-    }
+    const scoredRows = new Map<string, { row: DatabaseRow; score: number; kind: 'text' | 'phonetic' | 'first-letters' }>();
+    const addScoredRow = (row: DatabaseRow, forcedScore?: number, forcedKind?: 'first-letters') => {
+      const scored = forcedKind ? { score: forcedScore ?? 0, kind: forcedKind } : scoreSearchCandidate(trimmed, String(row.gurmukhi), String(row.transliteration));
+      if (scored.score < 575) return;
+      const lineId = String(row.lineId);
+      const current = scoredRows.get(lineId);
+      if (!current || current.score < scored.score) scoredRows.set(lineId, { row, score: scored.score, kind: scored.kind });
+      if (!isGurmukhi) for (const candidate of alignedCandidates(String(row.gurmukhi), String(row.transliteration), trimmed)) candidateMap.set(candidate.gurmukhi, candidate);
+    };
+    for (const raw of lineResult.values ?? []) addScoredRow(raw as DatabaseRow);
 
     const initialField = isGurmukhi ? 'idx.initials_gurmukhi' : 'idx.initials_latin';
-    const initialQuery = isGurmukhi ? trimmed.normalize('NFC').replaceAll(' ', '') : latinFold(trimmed).replaceAll(' ', '');
+    const initialQuery = isGurmukhi ? normalizeGurmukhi(trimmed).replaceAll(' ', '') : normalizeRoman(trimmed).replaceAll(' ', '');
     const initialResult = initialQuery ? await db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
-        l.source_work_id AS sourceWorkId, l.ang, l.gurmukhi, COALESCE(l.transliteration, '') AS transliteration,
+        l.source_work_id AS sourceWorkId, l.ang, l.line_order AS lineOrder, l.gurmukhi, COALESCE(l.transliteration, '') AS transliteration,
         COALESCE(c.preferred_name, '') AS contributorName, COALESCE(u.title, 'Shabad') AS title,
         COALESCE((SELECT group_concat(DISTINCT pc.content_type) FROM provider_content pc WHERE pc.text_unit_id = l.text_unit_id), '') AS providerTypes
       FROM line_search_index idx JOIN canonical_line l ON l.id = idx.line_id
       JOIN text_unit u ON u.id = l.text_unit_id LEFT JOIN contributor c ON c.id = l.contributor_id
       WHERE (${initialField} LIKE ? OR ${initialField} LIKE ?) ${facets.clause}
-      ORDER BY CASE l.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END, l.ang, l.line_order LIMIT ?`,
-      [`${initialQuery}%`, `%${initialQuery}%`, ...facets.params, limit]) : { values: [] };
-    const initialResults: CorpusSearchResult[] = [];
+      ORDER BY CASE WHEN ${initialField} LIKE ? THEN 0 ELSE 1 END,
+        CASE l.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END, l.ang, l.line_order LIMIT 600`,
+      [`${initialQuery}%`, `%${initialQuery}%`, ...facets.params, `${initialQuery}%`]) : { values: [] };
     for (const raw of initialResult.values ?? []) {
-      const row = raw as DatabaseRow; const unitId = String(row.textUnitId);
-      if (seenUnits.has(unitId)) continue; seenUnits.add(unitId);
-      initialResults.push({ id: `search:initials:${String(row.lineId)}`, resultType: 'sabad', textUnitId: unitId,
-        sourceWorkId: String(row.sourceWorkId), title: String(row.title),
-        subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)} · first-letter match`,
-        gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
-        ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: String(row.lineId),
-        matchKind: 'first-letters', providerContentTypes: splitProviderTypes(row.providerTypes) });
+      const row = raw as DatabaseRow;
+      const initials = isGurmukhi ? gurmukhiInitialQuery(String(row.gurmukhi)) : latinInitialQuery(String(row.transliteration));
+      addScoredRow(row, initials.startsWith(initialQuery) ? 790 : 690, 'first-letters');
     }
+
+    const seenUnits = new Set<string>();
+    const sabadResults: CorpusSearchResult[] = [...scoredRows.values()]
+      .sort((left, right) => right.score - left.score || sourcePriority(left.row) - sourcePriority(right.row) || numberValue(left.row.ang) - numberValue(right.row.ang) || numberValue(left.row.lineOrder) - numberValue(right.row.lineOrder))
+      .flatMap(({ row, kind, score }) => {
+        const unitId = String(row.textUnitId);
+        if (seenUnits.has(unitId)) return [];
+        seenUnits.add(unitId);
+        return [{ id: `search:sabad:${unitId}`, resultType: 'sabad' as const, textUnitId: unitId,
+          sourceWorkId: String(row.sourceWorkId), title: String(row.title),
+          subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)}${kind === 'first-letters' ? ' · first-letter match' : kind === 'phonetic' ? ' · tolerant phrase match' : ''}`,
+          gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
+          ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: String(row.lineId),
+          matchKind: kind, providerContentTypes: splitProviderTypes(row.providerTypes), searchScore: score }];
+      }).slice(0, limit);
 
     if (isGurmukhi) {
       const forms = await db.query(`SELECT t.comparison_form AS gurmukhi, COUNT(*) AS frequency
@@ -278,9 +278,9 @@ export class MobileCorpusGateway {
       ORDER BY CASE l.source_work_id WHEN 'source:G' THEN 0 ELSE 1 END,l.ang,l.line_order LIMIT ?`,
       [`%${trimmed.toLowerCase()}%`,...englishFacets.params,limit]) : { values: [] };
     const baniDbResults:CorpusSearchResult[]=(baniDbEnglishResult.values??[]).map(row=>({id:`search:banidb-translation:${String(row.lineId)}`,resultType:'translation',textUnitId:String(row.textUnitId),sourceWorkId:String(row.sourceWorkId),title:String(row.title),subtitle:`${String(row.contributorName)} · Ang ${numberValue(row.ang)} · BaniDB translation`,gurmukhi:String(row.gurmukhi),transliteration:String(row.transliteration),english:String(row.content),ang:numberValue(row.ang),contributorName:String(row.contributorName),lineId:String(row.lineId),matchKind:'analysis',providerContentTypes:[]}));
-    const allAnalysis=[...linkedResults,...baniDbResults,...translationResults];
+    const allAnalysis=[...linkedResults,...baniDbResults,...translationResults].filter(row => !seenUnits.has(String(row.textUnitId)));
     return { query: trimmed, mode: isGurmukhi ? 'gurmukhi' : allAnalysis.length > sabadResults.length ? 'english' : 'latin',
-      results: [...sabadResults, ...initialResults, ...allAnalysis].slice(0, limit), candidateForms: [...candidateMap.values()].slice(0, 12) };
+      results: [...sabadResults, ...allAnalysis].slice(0, limit), candidateForms: [...candidateMap.values()].slice(0, 12) };
   }
 
   async concordance(gurmukhi: string, filters: SearchFilters = defaultSearchFilters(), limit = 50, offset = 0): Promise<ConcordancePage> {
@@ -845,6 +845,18 @@ function textUnitSummary(row: DatabaseRow): TextUnitSummary {
     contributorId: String(row.contributorId), contributorName: String(row.contributorName),
     firstAng: numberValue(row.firstAng), lastAng: numberValue(row.lastAng), lineCount: numberValue(row.lineCount),
     preview: String(row.preview), transliteration: String(row.transliteration), raag: String(row.raag ?? 'Unclassified') };
+}
+
+function gurmukhiInitialQuery(value: string): string {
+  return normalizeGurmukhi(value).split(' ').filter(Boolean).map(word => looseGurmukhi(word)[0] ?? '').join('');
+}
+
+function latinInitialQuery(value: string): string {
+  return normalizeRoman(value).split(' ').filter(Boolean).map(word => phoneticWord(word)[0] ?? '').join('');
+}
+
+function sourcePriority(row: DatabaseRow): number {
+  return String(row.sourceWorkId) === 'source:G' ? 0 : 1;
 }
 
 function latinFold(value: string): string {
