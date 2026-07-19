@@ -15,4 +15,4 @@ Canonical Gurbani data is powered by BaniDB, a Khalis Foundation initiative. Sik
 
 ## Current checkpoint
 
-`v0.13.0-rc.1` adds optional BaniDB line translations, selected SGPC Dasam readings, Rehras and Ardas, three-state translation selection, ordered TGGSP life-event navigation, bold Gurmukhi, dismissible reader panels and clearer Home/Ang navigation. TGGSP whole-passage translations remain passage-level until a separately supplied review workbook is approved for v0.14.
+`v0.15.0-rc.1` rebuilds practical discovery around tolerant Roman, Gurmukhi, voice-alternative and first-letter search. The Read and Library structures are simplified, translation provenance uses compact rails, and an isolated Identify Keertan beta records only local transcripts, result references and tester verdicts. The installed reading profile remains SGPC-only.
