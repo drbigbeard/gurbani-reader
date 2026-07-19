@@ -39,12 +39,15 @@ export interface PersonalData {
   searchHistory: SearchHistoryEntry[];
   savedSearches: SavedSearch[];
   lastAngBySource: Record<string, number>;
+  keertanTests: KeertanIdentificationTest[];
+  myBaniIds: string[];
 }
 
 export interface PersonalCollection { id: string; title: string; lineIds: string[]; createdAt: string; }
 export interface ReadingHistoryEntry { textUnitId: string; lineId: string | null; visitedAt: string; }
 export interface SearchHistoryEntry { id: string; query: string; filters: SearchFilters; mode: SearchMode; searchedAt: string; }
 export interface SavedSearch { id: string; title: string; query: string; filters: SearchFilters; mode: SearchMode; }
+export interface KeertanIdentificationTest { id: string; createdAt: string; source: 'nearby-audio' | 'same-device-speaker'; heard: string[]; resultLineIds: string[]; verdict: 'unreviewed' | 'correct' | 'wrong' | 'no-match'; }
 
 export const defaultPreferences: ReaderPreferences = {
   showTransliteration: true,
@@ -91,7 +94,9 @@ export const defaultPersonalData: PersonalData = {
   history: [],
   searchHistory: [],
   savedSearches: [],
-  lastAngBySource: {}
+  lastAngBySource: {},
+  keertanTests: [],
+  myBaniIds: []
 };
 
 export function usePersistentState<T>(key: string, initial: T): [T, (next: T | ((current: T) => T)) => void] {
