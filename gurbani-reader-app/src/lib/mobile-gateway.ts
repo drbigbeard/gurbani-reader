@@ -163,11 +163,12 @@ export class MobileCorpusGateway {
     const isGurmukhi = /[\u0A00-\u0A7F]/u.test(trimmed);
     if (mode === 'theme') return this.themeSearch(trimmed, filters, limit);
     const facets = searchFacetSql(filters, 'l');
-    const latinPatterns = phoneticPatterns(trimmed);
-    const lineSql = isGurmukhi
-      ? `l.gurmukhi LIKE ?`
-      : latinPatterns.map(() => `lower(l.transliteration) LIKE ?`).join(' OR ');
-    const lineParams = isGurmukhi ? [`%${trimmed.normalize('NFC')}%`] : latinPatterns.map(pattern => `%${pattern}%`);
+    const normalizedRoman = latinFold(trimmed);
+    const phonetic = phoneticRoman(normalizedRoman);
+    const lineSql = isGurmukhi ? `l.gurmukhi LIKE ?` : `l.id IN (
+      SELECT line_id FROM line_search_fts WHERE line_search_fts MATCH ? ORDER BY rank LIMIT 800
+    )`;
+    const lineParams = isGurmukhi ? [`%${trimmed.normalize('NFC')}%`] : [ftsRomanQuery(normalizedRoman, phonetic)];
     const lineResult = await db.query(`SELECT l.id AS lineId, l.text_unit_id AS textUnitId,
         l.source_work_id AS sourceWorkId, l.ang, l.gurmukhi,
         COALESCE(l.transliteration, '') AS transliteration,
@@ -195,7 +196,7 @@ export class MobileCorpusGateway {
         subtitle: `${String(row.contributorName)} · Ang ${numberValue(row.ang)}`,
         gurmukhi: String(row.gurmukhi), transliteration: String(row.transliteration), english: '',
         ang: numberValue(row.ang), contributorName: String(row.contributorName), lineId: String(row.lineId),
-        matchKind: 'text', providerContentTypes: splitProviderTypes(row.providerTypes) });
+        matchKind: !isGurmukhi && latinFold(String(row.transliteration)).includes(normalizedRoman) ? 'text' : 'phonetic', providerContentTypes: splitProviderTypes(row.providerTypes) });
       if (sabadResults.length >= limit) break;
     }
 
@@ -846,20 +847,6 @@ function textUnitSummary(row: DatabaseRow): TextUnitSummary {
     preview: String(row.preview), transliteration: String(row.transliteration), raag: String(row.raag ?? 'Unclassified') };
 }
 
-function phoneticPatterns(query: string): string[] {
-  const raw = query.toLowerCase().trim();
-  const patterns = new Set([raw]);
-  if (!raw.includes('aa')) {
-    const expanded = raw.replace(/a/u, 'aa');
-    patterns.add(expanded);
-    patterns.add(expanded.replaceAll('aa', 'ā'));
-  }
-  patterns.add(raw.replaceAll('aa', 'ā'));
-  patterns.add(raw.replaceAll('ee', 'ī'));
-  patterns.add(raw.replaceAll('oo', 'ū'));
-  return [...patterns].filter(Boolean);
-}
-
 function latinFold(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLowerCase()
     .replace(/\(([a-z])\)/gu, '$1').replace(/[^a-z\s]/gu, ' ')
@@ -867,14 +854,25 @@ function latinFold(value: string): string {
 }
 
 function foldedWord(value: string): string {
-  return latinFold(value).replace(/[uia]$/u, '');
+  return phoneticRoman(value).replaceAll(' ', '');
 }
 
 function transliterationMatches(transliteration: string, query: string): boolean {
   const foldedQuery = latinFold(query);
-  if (foldedQuery.includes(' ')) return latinFold(transliteration).includes(foldedQuery);
+  if (foldedQuery.includes(' ')) return latinFold(transliteration).includes(foldedQuery) || phoneticRoman(transliteration).includes(phoneticRoman(foldedQuery));
   const wanted = foldedWord(foldedQuery);
   return latinFold(transliteration).split(' ').some(token => foldedWord(token) === wanted);
+}
+
+function phoneticRoman(value: string): string {
+  return latinFold(value).split(' ').map(word => word.replace(/aa/gu, 'a').replace(/ee|ii/gu, 'i')
+    .replace(/oo|uu/gu, 'u').replace(/ai|ae/gu, 'e').replace(/au/gu, 'o').replace(/ng/gu, 'g')
+    .replace(/(eai|ahi|ai|ee|[aeiou])$/u, '')).join(' ');
+}
+
+function ftsRomanQuery(normalized: string, phonetic: string): string {
+  const clean = (value: string) => value.replaceAll('"', ' ').replace(/\s+/gu, ' ').trim();
+  return `roman:"${clean(normalized)}"* OR roman_phonetic:"${clean(phonetic)}"*`;
 }
 
 function alignedCandidates(gurmukhi: string, transliteration: string, query: string): SearchCandidate[] {

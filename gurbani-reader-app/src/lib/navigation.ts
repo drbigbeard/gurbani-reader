@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Screen } from '../types';
 
 interface RouteState { screen: Screen; key: number; scrollY: number; depth: number; }
-const validScreens = new Set<Screen>(['home','read','sabad','bani','search','word','browse','contributor','raag','tggsp','glossary','saved']);
+const validScreens = new Set<Screen>(['home','read','sabad','bani','search','word','browse','contributor','raag','tggsp','glossary','saved','sources']);
 
 export function useNavigation(initial: Screen = 'home') {
   const initialised = useRef(false);

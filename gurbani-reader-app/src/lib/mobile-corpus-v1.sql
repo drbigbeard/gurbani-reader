@@ -123,6 +123,16 @@ CREATE TABLE IF NOT EXISTS line_search_index (
 CREATE INDEX IF NOT EXISTS idx_line_search_gurmukhi ON line_search_index(source_work_id, initials_gurmukhi);
 CREATE INDEX IF NOT EXISTS idx_line_search_latin ON line_search_index(source_work_id, initials_latin);
 
+CREATE TABLE IF NOT EXISTS search_alias (
+  id TEXT PRIMARY KEY NOT NULL,
+  alias TEXT NOT NULL,
+  normalized_alias TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  display_title TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_search_alias_normalized ON search_alias(normalized_alias);
+
 CREATE TABLE IF NOT EXISTS provider_content (
   id TEXT PRIMARY KEY NOT NULL,
   provider TEXT NOT NULL,

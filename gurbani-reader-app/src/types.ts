@@ -1,4 +1,4 @@
-export type Screen = 'home' | 'read' | 'sabad' | 'bani' | 'search' | 'word' | 'browse' | 'contributor' | 'raag' | 'tggsp' | 'glossary' | 'saved';
+export type Screen = 'home' | 'read' | 'sabad' | 'bani' | 'search' | 'word' | 'browse' | 'contributor' | 'raag' | 'tggsp' | 'glossary' | 'saved' | 'sources';
 export type SearchMode = 'auto' | 'theme';
 
 export interface SearchFilters {
@@ -90,7 +90,7 @@ export interface CorpusSearchResult {
   ang: number | null;
   contributorName: string;
   lineId: string | null;
-  matchKind: 'text' | 'first-letters' | 'analysis' | 'theme';
+  matchKind: 'text' | 'phonetic' | 'first-letters' | 'analysis' | 'theme';
   providerContentTypes?: string[];
 }
 

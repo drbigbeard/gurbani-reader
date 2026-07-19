@@ -10,6 +10,7 @@ export interface ReaderPreferences {
   showWordAnalysis: boolean;
   tggspLanguage: 'english' | 'panjabi' | 'both';
   theme: 'light' | 'paper' | 'sepia' | 'dark' | 'black';
+  accent: 'indigo' | 'burgundy' | 'slate' | 'forest';
   textScale: number;
   transliterationScale: number;
   interpretationScale: number;
@@ -23,6 +24,7 @@ export interface ReaderPreferences {
   gurmukhiWeight: 'normal' | 'bold';
   homeOrder: HomeModule[];
   hiddenHomeModules: HomeModule[];
+  onboardingComplete: boolean;
 }
 
 export type HomeModule = 'search' | 'banis' | 'ang' | 'dictionary' | 'recent' | 'explore';
@@ -34,12 +36,14 @@ export interface PersonalData {
   readingPosition: string | null;
   collections: PersonalCollection[];
   history: ReadingHistoryEntry[];
+  searchHistory: SearchHistoryEntry[];
   savedSearches: SavedSearch[];
   lastAngBySource: Record<string, number>;
 }
 
 export interface PersonalCollection { id: string; title: string; lineIds: string[]; createdAt: string; }
 export interface ReadingHistoryEntry { textUnitId: string; lineId: string | null; visitedAt: string; }
+export interface SearchHistoryEntry { id: string; query: string; filters: SearchFilters; mode: SearchMode; searchedAt: string; }
 export interface SavedSearch { id: string; title: string; query: string; filters: SearchFilters; mode: SearchMode; }
 
 export const defaultPreferences: ReaderPreferences = {
@@ -50,6 +54,7 @@ export const defaultPreferences: ReaderPreferences = {
   showWordAnalysis: false,
   tggspLanguage: 'english',
   theme: 'paper',
+  accent: 'indigo',
   textScale: 1,
   transliterationScale: 1,
   interpretationScale: 1,
@@ -73,7 +78,8 @@ export const defaultPreferences: ReaderPreferences = {
   backgroundColor: '#fbf7ed',
   gurmukhiWeight: 'normal',
   homeOrder: ['search', 'banis', 'ang', 'dictionary', 'recent', 'explore'],
-  hiddenHomeModules: []
+  hiddenHomeModules: [],
+  onboardingComplete: false
 };
 
 export const defaultPersonalData: PersonalData = {
@@ -83,6 +89,7 @@ export const defaultPersonalData: PersonalData = {
   readingPosition: null,
   collections: [],
   history: [],
+  searchHistory: [],
   savedSearches: [],
   lastAngBySource: {}
 };

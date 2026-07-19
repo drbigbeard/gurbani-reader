@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 const baseUrl = process.env.BANIDB_API_URL ?? 'https://api.banidb.com/v2';
@@ -10,7 +10,7 @@ const requests = [
   ...range(1, 40).map(page => ({ kind: 'ang', source: 'B', page })),
   ...range(1, 28).map(page => ({ kind: 'ang', source: 'S', page })),
   ...[...range(1, 13), 119, ...range(709, 712), ...range(1386, 1388)].map(page => ({ kind: 'ang', source: 'D', page })),
-  ...[4, 5, 6, 9, 21, 24].map(id => ({ kind: 'bani', id }))
+  ...[4, 5, 6, 9, 21, 23, 24].map(id => ({ kind: 'bani', id }))
 ];
 
 mkdirSync(outputRoot, { recursive: true });
@@ -28,9 +28,15 @@ async function worker() {
     const url = request.kind === 'ang'
       ? `${baseUrl}/angs/${request.page}/${request.source}`
       : `${baseUrl}/banis/${request.id}?length=s`;
-    const response = await fetchWithRetry(url);
-    const serialized = `${JSON.stringify(response)}\n`;
     const outputPath = resolve(outputRoot, relativePath);
+    let response; let serialized;
+    if (existsSync(outputPath)) {
+      serialized = readFileSync(outputPath, 'utf8');
+      response = JSON.parse(serialized);
+    } else {
+      response = await fetchWithRetry(url);
+      serialized = `${JSON.stringify(response)}\n`;
+    }
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, serialized);
     manifestRows[position] = { ...request, url, path: relativePath, sha256: sha256(serialized),
@@ -40,7 +46,7 @@ async function worker() {
   }
 }
 
-await Promise.all(Array.from({ length: 24 }, worker));
+await Promise.all(Array.from({ length: Number(process.env.SNAPSHOT_CONCURRENCY ?? 8) }, worker));
 const generatedAt = process.env.SNAPSHOT_GENERATED_AT ?? new Date().toISOString();
 const manifestCore = {
   format: 'gurbani-reader-v013-banidb-snapshot', generatedAt,
@@ -48,7 +54,7 @@ const manifestCore = {
   scope: {
     canonicalTranslations: ['Guru Granth Sahib', 'Vaaran Bhai Gurdas'],
     selectedDasamAngs: [...range(1, 13), 119, ...range(709, 712), ...range(1386, 1388)],
-    sgpcBaniIds: [4, 5, 6, 9, 21, 24]
+    sgpcBaniIds: [4, 5, 6, 9, 21, 23, 24]
   },
   files: manifestRows
 };
@@ -65,7 +71,7 @@ async function fetchWithRetry(url) {
   let lastError;
   for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
-      const response = await fetch(url, { headers: { Accept: 'application/json', 'user-agent': 'GurbaniReaderPersonal/0.13' },
+      const response = await fetch(url, { headers: { Accept: 'application/json', 'user-agent': 'GurbaniReaderPersonal/0.14' },
         signal: AbortSignal.timeout(45_000) });
       if (!response.ok) throw new Error(`BaniDB ${response.status} for ${url}`);
       return await response.json();

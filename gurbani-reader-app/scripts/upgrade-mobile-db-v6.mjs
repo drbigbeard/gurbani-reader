@@ -9,6 +9,7 @@ const BANI_DEFINITIONS = {
   6: { token: 'tav-prasad-savaiye', sourceWorkId: 'source:D' },
   9: { token: 'benti-chaupai', sourceWorkId: 'source:D' },
   21: { token: 'rehras', sourceWorkId: 'source:G' },
+  23: { token: 'kirtan-sohila', sourceWorkId: 'source:G' },
   24: { token: 'ardas', sourceWorkId: 'source:G' }
 };
 
@@ -43,7 +44,7 @@ const allAngRows = manifest.files.filter(row => row.kind === 'ang').flatMap(file
   return (body.page ?? []).map(row => ({ ...row, snapshotSha256: file.sha256, snapshotSource: file.url, snapshotSourceWork: file.source }));
 });
 const baniFiles = new Map(manifest.files.filter(row => row.kind === 'bani').map(file => [Number(file.id), file]));
-const selectedBanis = [4, 5, 6, 9, 21, 24].map(id => {
+const selectedBanis = [4, 5, 6, 9, 21, 23, 24].map(id => {
   const file = baniFiles.get(id);
   if (!file) throw new Error(`Snapshot is missing SGPC Bani ${id}`);
   return { id, file, body: readJson(resolve(snapshotRoot, file.path)), definition: BANI_DEFINITIONS[id] };
@@ -59,10 +60,13 @@ try {
   db.exec('DELETE FROM line_translation');
   const canonicalByUpstream = new Map(db.prepare(`SELECT id,upstream_id AS upstreamId FROM canonical_line WHERE source_work_id IN ('source:G','source:B') AND upstream_id IS NOT NULL`).all().map(row => [String(row.upstreamId), String(row.id)]));
   const insertTranslation = db.prepare(`INSERT OR REPLACE INTO line_translation(canonical_line_id,provider,language,content,source_key,snapshot_sha256) VALUES (?,?,?,?,?,?)`);
+  const updateTransliteration = db.prepare(`UPDATE canonical_line SET transliteration=? WHERE id=? AND COALESCE(transliteration,'')=''`);
   for (const row of existingRows) {
     const lineId = canonicalByUpstream.get(String(row.verseId));
     const content = clean(row.translation?.en?.bdb);
     if (lineId && content) insertTranslation.run(lineId, 'banidb', 'en', content, row.snapshotSource, row.snapshotSha256);
+    const transliteration = clean(row.transliteration?.english || row.transliteration?.en);
+    if (lineId && transliteration) updateTransliteration.run(transliteration, lineId);
   }
 
   const corpusRelease = String(db.prepare("SELECT value FROM metadata WHERE key='corpus_release_id'").get()?.value ?? releaseId);
@@ -90,9 +94,9 @@ const report = {
   status: 'pass', database: basename(outputPath), schemaRelease: 'v6',
   canonicalLines: count('canonical_line'), selectedDasamLines: count('canonical_line', "source_work_id='source:D'"),
   baniDbLineTranslations: count('line_translation', "provider='banidb' AND language='en'"),
-  selectedSgpcReadings: count('bani_collection', 'upstream_id IN (4,5,6,9,21,24)'),
-  selectedReadingLines: count('bani_collection_line', 'bani_id IN (\'bani:banidb:4\',\'bani:banidb:5\',\'bani:banidb:6\',\'bani:banidb:9\',\'bani:banidb:21\',\'bani:banidb:24\')'),
-  selectedCrosswalks: count('bani_line_crosswalk', "bani_id IN ('bani:banidb:4','bani:banidb:5','bani:banidb:6','bani:banidb:9','bani:banidb:21','bani:banidb:24') AND canonical_line_id IS NOT NULL"),
+  selectedSgpcReadings: count('bani_collection', 'upstream_id IN (4,5,6,9,21,23,24)'),
+  selectedReadingLines: count('bani_collection_line', 'bani_id IN (\'bani:banidb:4\',\'bani:banidb:5\',\'bani:banidb:6\',\'bani:banidb:9\',\'bani:banidb:21\',\'bani:banidb:23\',\'bani:banidb:24\')'),
+  selectedCrosswalks: count('bani_line_crosswalk', "bani_id IN ('bani:banidb:4','bani:banidb:5','bani:banidb:6','bani:banidb:9','bani:banidb:21','bani:banidb:23','bani:banidb:24') AND canonical_line_id IS NOT NULL"),
   snapshotChecksum: manifest.sha256
 };
 db.close();
