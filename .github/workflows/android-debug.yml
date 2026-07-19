@@ -81,26 +81,26 @@ jobs:
           test -f "$HOME/.android/debug.keystore"
           "$ZIPALIGN" -P 16 -f 4 \
             android/app/build/outputs/apk/debug/app-debug.apk \
-            Gurbani-Reader-v0.15.0-rc1-aligned.apk
+            Gurbani-Reader-v0.16.0-rc1-aligned.apk
           "$APKSIGNER" sign \
             --ks "$HOME/.android/debug.keystore" \
             --ks-key-alias androiddebugkey \
             --ks-pass pass:android \
             --key-pass pass:android \
-            --out Gurbani-Reader-v0.15.0-rc1-Android.apk \
-            Gurbani-Reader-v0.15.0-rc1-aligned.apk
-          "$ZIPALIGN" -c -P 16 -v 4 Gurbani-Reader-v0.15.0-rc1-Android.apk
-          "$APKSIGNER" verify --verbose --print-certs Gurbani-Reader-v0.15.0-rc1-Android.apk
+            --out Gurbani-Reader-v0.16.0-rc1-Android.apk \
+            Gurbani-Reader-v0.16.0-rc1-aligned.apk
+          "$ZIPALIGN" -c -P 16 -v 4 Gurbani-Reader-v0.16.0-rc1-Android.apk
+          "$APKSIGNER" verify --verbose --print-certs Gurbani-Reader-v0.16.0-rc1-Android.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Gurbani-Reader-v0.15.0-rc1-Android
-          path: gurbani-reader-app/Gurbani-Reader-v0.15.0-rc1-Android.apk
+          name: Gurbani-Reader-v0.16.0-rc1-Android
+          path: gurbani-reader-app/Gurbani-Reader-v0.16.0-rc1-Android.apk
           if-no-files-found: error
       - name: Publish installable APK
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v0.15.0-rc.1
+          TAG: v0.16.0-rc.1
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.15 RC 1" --notes-file ../RELEASE_NOTES_v0.15-rc1.md
-          gh release upload "$TAG" Gurbani-Reader-v0.15.0-rc1-Android.apk --clobber
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Gurbani Reader v0.16 RC 1" --notes-file ../RELEASE_NOTES_v0.16-rc1.md
+          gh release upload "$TAG" Gurbani-Reader-v0.16.0-rc1-Android.apk --clobber
