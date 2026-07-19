@@ -4,7 +4,7 @@ This release focuses on practical discovery and a calmer reading structure.
 
 - Rebuilt search around ranked, tolerant Roman, Gurmukhi, phonetic and first-letter representations.
 - Searches recognised voice alternatives together and opens the complete Shabad at the matched line.
-- Adds a machine-readable 18-case regression gate covering varied phrases, optional nasal markers, selected Dasam Bani, Gurmukhi tolerance, first letters and negative cases.
+- Adds a machine-readable 19-case regression gate covering varied phrases, optional nasal markers, selected Dasam Bani, Gurmukhi tolerance, first letters, a recognition-error case and negative cases.
 - Renames the primary Browse destination to Read and reorganises it around All Banis, Nitnem, My Banis, Go to Ang, Raags, Contributors, Vaars, life events, and Words & meanings.
 - Removes “Common Banis”, “Composition forms”, “Daily & Banis”, and the top-level Ceremonies tab.
 - Uses compact solid/dashed translation rails with one legend instead of repeating provider names on every line.
