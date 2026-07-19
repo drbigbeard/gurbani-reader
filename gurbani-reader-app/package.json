@@ -1,6 +1,6 @@
 {
   "name": "gurbani-reader-app",
-  "version": "0.13.0-rc.1",
+  "version": "0.14.0-rc.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "build:native": "tsc -b && NATIVE_BUILD=true vite build",
     "check": "tsc -b --pretty false",
     "audit:pass1": "node scripts/audit-v011-pass1.mjs",
-    "audit:rc": "node scripts/audit-v013.mjs",
+    "audit:rc": "node scripts/audit-v014.mjs",
     "preview": "vite preview",
     "corpus:mobile-db": "node scripts/build-mobile-db.mjs",
     "corpus:upgrade-v2": "node scripts/upgrade-mobile-db-v2.mjs",
@@ -19,6 +19,7 @@
     "data:upgrade-v5": "node scripts/upgrade-mobile-db-v5.mjs",
     "data:fetch-v013": "node scripts/fetch-v013-snapshot.mjs",
     "data:upgrade-v6": "node scripts/upgrade-mobile-db-v6.mjs",
+    "data:upgrade-v7": "node scripts/upgrade-mobile-db-v7.mjs",
     "corpus:restore": "node scripts/restore-corpus-pack.mjs",
     "native:sync": "npm run build:native && cap sync",
     "android:open": "cap open android",

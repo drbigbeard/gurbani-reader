@@ -1,6 +1,7 @@
 .DS_Store
 *.zip
 *.log
+.cache-*/
 
 **/node_modules/
 **/dist/
@@ -15,4 +16,3 @@ gurbani-reader-app/android/app/src/main/assets/public/
 gurbani-reader-app/ios/App/App/public/
 
 gurbani-corpus-poc/imports/
-
