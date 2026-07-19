@@ -3,7 +3,7 @@ import type { Screen } from '../types';
 
 const items: Array<{ id: Screen; label: string; icon: string }> = [
   { id: 'home', label: 'Home', icon: '⌂' }, { id: 'search', label: 'Search', icon: '⌕' },
-  { id: 'browse', label: 'Browse', icon: '☷' }, { id: 'saved', label: 'Library', icon: '♡' }
+  { id: 'browse', label: 'Read', icon: '☷' }, { id: 'saved', label: 'Library', icon: '♡' }
 ];
 
 export function Chrome({ active, onNavigate, onBack, children }: {

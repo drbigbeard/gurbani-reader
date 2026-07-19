@@ -20,7 +20,7 @@ export async function listenForSearch(language: 'pa-IN' | 'en-GB'): Promise<stri
   if (!Recognition) throw new Error('Voice search is not available on this device.');
   return new Promise((resolve, reject) => {
     const recognizer = new Recognition();
-    recognizer.lang = language; recognizer.interimResults = false; recognizer.maxAlternatives = 3;
+    recognizer.lang = language; recognizer.interimResults = false; recognizer.maxAlternatives = 5;
     recognizer.onerror = () => reject(new Error('Speech could not be recognised.'));
     recognizer.onresult = event => resolve(Array.from(event.results[0] ?? [], item => item.transcript).filter(Boolean));
     recognizer.start();

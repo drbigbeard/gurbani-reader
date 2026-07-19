@@ -5,14 +5,15 @@ import type { PersonalData, ReaderPreferences } from './persistence';
 
 export interface GurbaniReaderBackup {
   format: 'gurbani-reader-backup';
-  version: 1;
+  version: 1 | 2;
   exportedAt: string;
+  referenceModel?: 'portable-upstream-ids';
   personal: PersonalData;
   preferences: ReaderPreferences;
 }
 
 export async function exportBackup(personal: PersonalData, preferences: ReaderPreferences): Promise<void> {
-  const backup: GurbaniReaderBackup = { format: 'gurbani-reader-backup', version: 1, exportedAt: new Date().toISOString(), personal, preferences };
+  const backup: GurbaniReaderBackup = { format: 'gurbani-reader-backup', version: 2, referenceModel: 'portable-upstream-ids', exportedAt: new Date().toISOString(), personal, preferences };
   const data = JSON.stringify(backup, null, 2); const name = `Gurbani-Reader-backup-${new Date().toISOString().slice(0, 10)}.json`;
   if (Capacitor.isNativePlatform()) {
     await Filesystem.writeFile({ path: name, data, directory: Directory.Cache, encoding: Encoding.UTF8 });
@@ -26,6 +27,6 @@ export async function exportBackup(personal: PersonalData, preferences: ReaderPr
 
 export function parseBackup(text: string): GurbaniReaderBackup {
   const parsed = JSON.parse(text) as Partial<GurbaniReaderBackup>;
-  if (parsed.format !== 'gurbani-reader-backup' || parsed.version !== 1 || !parsed.personal || !parsed.preferences) throw new Error('Not a Gurbani Reader backup');
+  if (parsed.format !== 'gurbani-reader-backup' || ![1, 2].includes(Number(parsed.version)) || !parsed.personal || !parsed.preferences) throw new Error('Not a Gurbani Reader backup');
   return parsed as GurbaniReaderBackup;
 }

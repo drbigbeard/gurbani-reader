@@ -92,6 +92,7 @@ export interface CorpusSearchResult {
   lineId: string | null;
   matchKind: 'text' | 'phonetic' | 'first-letters' | 'analysis' | 'theme';
   providerContentTypes?: string[];
+  searchScore?: number;
 }
 
 export interface CorpusSearchResponse {
