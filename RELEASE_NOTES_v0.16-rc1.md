@@ -13,3 +13,5 @@ This release concentrates on practical search and a calmer, clearer reading expe
 - Identify Keertan remains an on-device beta tool under Search; no raw audio is stored.
 
 The v0.15 machine-readable search benchmark remains a release gate. v0.16 adds automated theme-trigger, contrast and backup-compatibility audits.
+
+For Android local installation, download `Gurbani-Reader-v0.16.0-rc1-Android.apk` from the v0.16 RC 1 GitHub release. The APK is aligned, signed and verified by the release workflow.
