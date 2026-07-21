@@ -1,6 +1,6 @@
 {
-  "name": "gurbani-reader-app",
-  "version": "0.16.0-rc.1",
+  "name": "shabad-sojhi-app",
+  "version": "0.16.0-rc.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -27,6 +27,8 @@
     "corpus:restore": "node scripts/restore-corpus-pack.mjs",
     "native:sync": "npm run build:native && cap sync",
     "native:prepare-assets": "node scripts/prepare-native-assets.mjs",
+    "ios:prepare": "npm run native:prepare-assets && npm run build:native && cap sync ios",
+    "ios:audit": "node scripts/audit-ios-v016.mjs",
     "android:open": "cap open android",
     "ios:open": "cap open ios"
   },

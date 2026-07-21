@@ -25,9 +25,9 @@ export function Chrome({
     <div className={`app-shell screen-${active}`}>
       <aside className="sidebar">
         <div className="brand">
-          <span className="gurmukhi brand-mark">ੴ</span>
-          <strong>Gurbani Reader</strong>
-          <small>Read · understand · explore</small>
+          <span className="gurmukhi brand-mark" aria-hidden="true">ਸ</span>
+          <strong>Shabad Sojhi</strong>
+          <small>Read · Find · Understand Gurbani</small>
         </div>
         {active !== "settings" && (
           <button
