@@ -5,6 +5,12 @@ import {
   writePersonalState,
 } from "./personal-store";
 import type { SearchFilters, SearchMode } from "../types";
+import type { BrowseFilterState } from "../types";
+import {
+  defaultBrowseFilters,
+  defaultSearchFilters,
+  type RememberedFilter,
+} from "./filters";
 
 export interface ReaderPreferences {
   showTransliteration: boolean;
@@ -30,6 +36,11 @@ export interface ReaderPreferences {
   hiddenHomeModules: HomeModule[];
   onboardingComplete: boolean;
   showExperimentalFeatures: boolean;
+  filterViews: {
+    search: RememberedFilter<SearchFilters>;
+    browse: RememberedFilter<BrowseFilterState>;
+  };
+  seenGuideTips: string[];
 }
 
 export type HomeModule =
@@ -118,6 +129,17 @@ export const defaultPreferences: ReaderPreferences = {
   hiddenHomeModules: [],
   onboardingComplete: false,
   showExperimentalFeatures: true,
+  filterViews: {
+    search: {
+      current: defaultSearchFilters,
+      defaultValue: defaultSearchFilters,
+    },
+    browse: {
+      current: defaultBrowseFilters,
+      defaultValue: defaultBrowseFilters,
+    },
+  },
+  seenGuideTips: [],
 };
 
 export const defaultPersonalData: PersonalData = {
