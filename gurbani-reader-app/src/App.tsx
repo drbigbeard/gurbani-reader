@@ -1986,7 +1986,7 @@ function Browse(p: {
         open={filterOpen}
         title={p.tab === "banis" ? "All Banis" : title(p.tab)}
         groups={browseFilterGroups(p.tab)}
-        selected={browseFilterSelection(f, p.tab) as Record<string, string[]>}
+        selected={browseFilterSelection(f, p.tab)}
         sortOptions={browseSortOptions(p.tab)}
         sort={browseSortValue(f, p.tab)}
         onClose={() => setFilterOpen(false)}
@@ -2069,7 +2069,10 @@ function browseFilterGroups(tab: BrowseTab) {
   ];
 }
 
-function browseFilterSelection(filters: BrowseFilterState, tab: BrowseTab) {
+function browseFilterSelection(
+  filters: BrowseFilterState,
+  tab: BrowseTab,
+): Record<string, string[]> {
   if (tab === "banis")
     return {
       baniCollections: filters.baniCollections,
