@@ -4,6 +4,10 @@ import { Chrome } from "./components/Chrome";
 import { DataFooter, EmptyMetric, PageHeading } from "./components/Common";
 import { GurmukhiKeyboard } from "./components/GurmukhiKeyboard";
 import { FilterButton, FilterSheet } from "./components/FilterSheet";
+import {
+  FeedbackCenter,
+  FeedbackComposer,
+} from "./components/Feedback";
 import { Icon } from "./components/Icon";
 import { ProviderLayers } from "./components/ProviderLayers";
 import { SearchBar } from "./components/SearchBar";
@@ -130,6 +134,9 @@ export default function App() {
   const [savedLines, setSavedLines] = useState<CanonicalLine[]>([]);
   const [historyUnits, setHistoryUnits] = useState<TextUnitSummary[]>([]);
   const [matchedLineId, setMatchedLineId] = useState<string | null>(null);
+  const [lastVoiceAlternatives, setLastVoiceAlternatives] = useState<string[]>(
+    [],
+  );
   const [preferences, setPreferences] = usePersistentState(
     "gurbani:preferences:v3",
     defaultPreferences,
@@ -402,6 +409,7 @@ export default function App() {
     setRaagUnits((v) => [...v, ...rows]);
   }
   async function runSearch() {
+    setLastVoiceAlternatives([]);
     const term = query.trim();
     setBusy(true);
     try {
@@ -436,6 +444,7 @@ export default function App() {
       ...new Set(terms.map((value) => value.trim()).filter(Boolean)),
     ];
     if (!alternatives.length) return;
+    setLastVoiceAlternatives(alternatives);
     const primary = alternatives[0];
     setQuery(primary);
     setBusy(true);
@@ -809,7 +818,10 @@ export default function App() {
         {screen === "search" && (
           <SearchView
             query={query}
-            setQuery={setQuery}
+            setQuery={(value) => {
+              setQuery(value);
+              setLastVoiceAlternatives([]);
+            }}
             mode={searchMode}
             setMode={setSearchMode}
             filters={searchFilters}
@@ -860,6 +872,9 @@ export default function App() {
               }))
             }
             showExperimental={preferences.showExperimentalFeatures}
+            voiceAlternatives={
+              lastVoiceAlternatives
+            }
             personal={personal}
             setPersonal={setPersonal}
           />
@@ -920,6 +935,7 @@ export default function App() {
             restoreSearch={restoreSearch}
             openSources={() => navigate("sources")}
             openHelp={() => navigate("help")}
+            openFeedback={() => navigate("feedback")}
             exportData={() =>
               exportBackup(personal, preferences)
                 .then(() => setMessage("Backup ready to save or share."))
@@ -929,6 +945,19 @@ export default function App() {
           />
         )}
         {screen === "sources" && <SourcesGuide close={() => back()} />}
+        {screen === "feedback" && (
+          <FeedbackCenter
+            records={personal.feedbackRecords ?? []}
+            setRecords={(records) =>
+              setPersonal((current) => ({
+                ...current,
+                feedbackRecords: records,
+              }))
+            }
+            notify={setMessage}
+            fail={setError}
+          />
+        )}
         {screen === "help" && (
           <HelpGuide
             openSources={() => navigate("sources")}
@@ -2313,6 +2342,7 @@ type SearchViewProps = {
   notify: (v: string) => void;
   fail: (v: string) => void;
   showExperimental: boolean;
+  voiceAlternatives: string[];
   personal: PersonalData;
   setPersonal: CommonReader["setPersonal"];
 };
@@ -2418,6 +2448,9 @@ function SearchView(p: SearchViewProps) {
   const [live, setLive] = useState<CorpusSearchResponse>(emptySearch);
   const [themes, setThemes] = useState<CorpusSearchResponse>(emptySearch);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [feedbackKind, setFeedbackKind] = useState<
+    "search" | "theme" | null
+  >(null);
   const q = fold(p.query);
   useEffect(() => {
     const term = p.query.trim();
@@ -2607,6 +2640,17 @@ function SearchView(p: SearchViewProps) {
           {p.response.query === p.query.trim() ? "Matches" : "Live shortlist"}
         </h2>
         <SearchResults response={displayed} openSabad={p.openSabad} />
+        {p.query.trim() && (
+          <button
+            className="feedback-trigger"
+            onClick={() => setFeedbackKind("search")}
+          >
+            <Icon name="rate_review" />{" "}
+            {displayed.results.length
+              ? "Did you find what you meant?"
+              : "Tell us what you expected"}
+          </button>
+        )}
       </section>
       {p.showExperimental && themes.results.length > 0 && (
         <section className="theme-results">
@@ -2621,6 +2665,28 @@ function SearchView(p: SearchViewProps) {
             </small>
           </header>
           <SearchResults response={themes} openSabad={p.openSabad} />
+          <button
+            className="feedback-trigger secondary"
+            onClick={() => setFeedbackKind("theme")}
+          >
+            <Icon name="rate_review" /> Review these suggestions
+          </button>
+        </section>
+      )}
+      {p.showExperimental && p.query.trim() && !themes.results.length && (
+        <section className="panel theme-feedback-empty">
+          <span className="experimental-badge">Experimental</span>
+          <h2>Expected thematic suggestions?</h2>
+          <p>
+            Tell us what concept you meant and, if possible, select a Shabad
+            that should have appeared.
+          </p>
+          <button
+            className="feedback-trigger secondary"
+            onClick={() => setFeedbackKind("theme")}
+          >
+            <Icon name="rate_review" /> Report a missing theme result
+          </button>
         </section>
       )}
       {p.showExperimental && (
@@ -2628,8 +2694,37 @@ function SearchView(p: SearchViewProps) {
           personal={p.personal}
           setPersonal={p.setPersonal}
           openSabad={p.openSabad}
+          notify={p.notify}
         />
       )}
+      <FeedbackComposer
+        open={feedbackKind !== null}
+        context={{
+          kind:
+            feedbackKind === "theme"
+              ? "theme"
+              : p.voiceAlternatives.length
+                ? "voice-search"
+                : "written-search",
+          query: p.query,
+          voiceAlternatives:
+            feedbackKind === "theme" ? [] : p.voiceAlternatives,
+          filters: p.filters,
+          candidates:
+            feedbackKind === "theme" ? themes.results : displayed.results,
+        }}
+        onSave={(record) => {
+          p.setPersonal((current) => ({
+            ...current,
+            feedbackRecords: [
+              record,
+              ...(current.feedbackRecords ?? []),
+            ].slice(0, 250),
+          }));
+          p.notify("Feedback saved on this device.");
+        }}
+        onClose={() => setFeedbackKind(null)}
+      />
     </section>
   );
 }
@@ -2681,10 +2776,12 @@ function IdentifyKeertan({
   personal,
   setPersonal,
   openSabad,
+  notify,
 }: {
   personal: PersonalData;
   setPersonal: CommonReader["setPersonal"];
   openSabad: (id: string, lineId?: string | null) => Promise<void>;
+  notify: (message: string) => void;
 }) {
   const [source, setSource] = useState<"nearby-audio" | "same-device-speaker">(
     "nearby-audio",
@@ -2693,6 +2790,7 @@ function IdentifyKeertan({
   const [heard, setHeard] = useState<string[]>([]);
   const [results, setResults] = useState<CorpusSearchResponse["results"]>([]);
   const [error, setError] = useState("");
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const identify = async () => {
     setListening(true);
     setHeard([]);
@@ -2757,13 +2855,6 @@ function IdentifyKeertan({
       setListening(false);
     }
   };
-  const markLatest = (verdict: "correct" | "wrong" | "no-match") =>
-    setPersonal((current) => ({
-      ...current,
-      keertanTests: current.keertanTests.map((test, index) =>
-        index === 0 ? { ...test, verdict } : test,
-      ),
-    }));
   return (
     <details className="panel experimental-keertan">
       <summary>
@@ -2820,12 +2911,8 @@ function IdentifyKeertan({
       {heard.length > 0 && (
         <div className="keertan-feedback">
           <span>Was the correct Shabad shown?</span>
-          <button onClick={() => markLatest("correct")}>Yes</button>
-          <button className="secondary" onClick={() => markLatest("wrong")}>
-            No
-          </button>
-          <button className="secondary" onClick={() => markLatest("no-match")}>
-            No useful match
+          <button onClick={() => setFeedbackOpen(true)}>
+            Correct or review this result
           </button>
         </div>
       )}
@@ -2834,6 +2921,41 @@ function IdentifyKeertan({
         {personal.keertanTests.length === 1 ? "record" : "records"} will be
         included in a backup.
       </small>
+      <FeedbackComposer
+        open={feedbackOpen}
+        context={{
+          kind: "keertan",
+          query: heard[0] ?? "",
+          voiceAlternatives: heard,
+          audioSource: source,
+          filters: defaultSearchFilters,
+          candidates: results,
+        }}
+        onSave={(record) => {
+          setPersonal((current) => ({
+            ...current,
+            feedbackRecords: [
+              record,
+              ...(current.feedbackRecords ?? []),
+            ].slice(0, 250),
+            keertanTests: current.keertanTests.map((test, index) =>
+              index === 0
+                ? {
+                    ...test,
+                    verdict:
+                      record.verdict === "correct"
+                        ? "correct"
+                        : record.verdict === "no-match"
+                          ? "no-match"
+                          : "wrong",
+                  }
+                : test,
+            ),
+          }));
+          notify("Keertan feedback saved on this device.");
+        }}
+        onClose={() => setFeedbackOpen(false)}
+      />
     </details>
   );
 }
@@ -3387,6 +3509,7 @@ function Settings({
   restoreSearch,
   openSources,
   openHelp,
+  openFeedback,
   exportData,
   importData,
 }: {
@@ -3397,6 +3520,7 @@ function Settings({
   restoreSearch: (row: SavedSearch) => Promise<void>;
   openSources: () => void;
   openHelp: () => void;
+  openFeedback: () => void;
   exportData: () => Promise<void>;
   importData: (file: File) => Promise<void>;
 }) {
@@ -3406,6 +3530,19 @@ function Settings({
         Appearance, help, experimental features and local backup.
       </PageHeading>
       <div className="settings-stack">
+        <section className="panel">
+          <h2>Beta feedback</h2>
+          <p>
+            Review saved search, voice, Keertan and experimental-theme
+            corrections. Feedback stays on this device until you share it.
+          </p>
+          <button onClick={openFeedback}>
+            Open feedback
+            {personal.feedbackRecords?.length
+              ? ` (${personal.feedbackRecords.length})`
+              : ""}
+          </button>
+        </section>
         <section className="panel">
           <h2>Colour accent</h2>
           <div className="accent-choices">
@@ -3881,7 +4018,13 @@ const helpTopics = [
     section: "Troubleshooting",
     title: "When search or voice does not find the expected Shabad",
     icon: "help",
-    body: "Check the ‘Heard’ transcript, try a shorter phrase, and clear restrictive filters. Punjabi voice recognition may depend on the device language service and network. Typed search and the installed reading data remain available offline.",
+    body: "Check the ‘Heard’ transcript, try a shorter phrase, and clear restrictive filters. Use ‘Tell us what you expected’ to correct the wording and select the intended Shabad. Punjabi voice recognition may depend on the device language service and network. Typed search and the installed reading data remain available offline.",
+  },
+  {
+    section: "Beta feedback",
+    title: "Correct a result and share feedback",
+    icon: "rate_review",
+    body: "Search, voice, Identify Keertan and experimental theme results each have a contextual correction action. Choose the intended Shabad or find it manually, then review records under Settings → Feedback. Records stay on this device and are exported separately from bookmarks and reflections. They are reviewed before changing search.",
   },
 ];
 

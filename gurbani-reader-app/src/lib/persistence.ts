@@ -57,6 +57,7 @@ export interface PersonalData {
   savedSearches: SavedSearch[];
   lastAngBySource: Record<string, number>;
   keertanTests: KeertanIdentificationTest[];
+  feedbackRecords: FeedbackRecord[];
   myBaniIds: string[];
 }
 
@@ -92,6 +93,48 @@ export interface KeertanIdentificationTest {
   heard: string[];
   resultLineIds: string[];
   verdict: "unreviewed" | "correct" | "wrong" | "no-match";
+}
+
+export type FeedbackKind =
+  | "written-search"
+  | "voice-search"
+  | "keertan"
+  | "theme"
+  | "general";
+
+export type FeedbackVerdict =
+  | "correct"
+  | "partly-correct"
+  | "wrong"
+  | "no-match"
+  | "not-relevant"
+  | "missing";
+
+export interface FeedbackCandidate {
+  textUnitId: string;
+  lineId: string | null;
+  title: string;
+  gurmukhi: string;
+  transliteration: string;
+  score: number | null;
+}
+
+export interface FeedbackRecord {
+  schemaVersion: 1;
+  id: string;
+  createdAt: string;
+  appVersion: string;
+  platform: string;
+  kind: FeedbackKind;
+  verdict: FeedbackVerdict;
+  query: string;
+  correctedQuery: string;
+  voiceAlternatives: string[];
+  audioSource?: "nearby-audio" | "same-device-speaker";
+  filters?: SearchFilters;
+  candidateResults: FeedbackCandidate[];
+  selectedResult: FeedbackCandidate | null;
+  comment: string;
 }
 
 export const defaultPreferences: ReaderPreferences = {
@@ -153,6 +196,7 @@ export const defaultPersonalData: PersonalData = {
   savedSearches: [],
   lastAngBySource: {},
   keertanTests: [],
+  feedbackRecords: [],
   myBaniIds: [],
 };
 

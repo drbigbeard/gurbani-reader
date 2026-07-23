@@ -11,6 +11,7 @@ export type Screen =
   | "tggsp"
   | "glossary"
   | "saved"
+  | "feedback"
   | "help"
   | "settings"
   | "sources";
