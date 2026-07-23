@@ -5,6 +5,12 @@ import {
   writePersonalState,
 } from "./personal-store";
 import type { SearchFilters, SearchMode } from "../types";
+import type { BrowseFilterState } from "../types";
+import {
+  defaultBrowseFilters,
+  defaultSearchFilters,
+  type RememberedFilter,
+} from "./filters";
 
 export interface ReaderPreferences {
   showTransliteration: boolean;
@@ -30,6 +36,11 @@ export interface ReaderPreferences {
   hiddenHomeModules: HomeModule[];
   onboardingComplete: boolean;
   showExperimentalFeatures: boolean;
+  filterViews: {
+    search: RememberedFilter<SearchFilters>;
+    browse: RememberedFilter<BrowseFilterState>;
+  };
+  seenGuideTips: string[];
 }
 
 export type HomeModule =
@@ -46,6 +57,7 @@ export interface PersonalData {
   savedSearches: SavedSearch[];
   lastAngBySource: Record<string, number>;
   keertanTests: KeertanIdentificationTest[];
+  feedbackRecords: FeedbackRecord[];
   myBaniIds: string[];
 }
 
@@ -83,6 +95,48 @@ export interface KeertanIdentificationTest {
   verdict: "unreviewed" | "correct" | "wrong" | "no-match";
 }
 
+export type FeedbackKind =
+  | "written-search"
+  | "voice-search"
+  | "keertan"
+  | "theme"
+  | "general";
+
+export type FeedbackVerdict =
+  | "correct"
+  | "partly-correct"
+  | "wrong"
+  | "no-match"
+  | "not-relevant"
+  | "missing";
+
+export interface FeedbackCandidate {
+  textUnitId: string;
+  lineId: string | null;
+  title: string;
+  gurmukhi: string;
+  transliteration: string;
+  score: number | null;
+}
+
+export interface FeedbackRecord {
+  schemaVersion: 1;
+  id: string;
+  createdAt: string;
+  appVersion: string;
+  platform: string;
+  kind: FeedbackKind;
+  verdict: FeedbackVerdict;
+  query: string;
+  correctedQuery: string;
+  voiceAlternatives: string[];
+  audioSource?: "nearby-audio" | "same-device-speaker";
+  filters?: SearchFilters;
+  candidateResults: FeedbackCandidate[];
+  selectedResult: FeedbackCandidate | null;
+  comment: string;
+}
+
 export const defaultPreferences: ReaderPreferences = {
   showTransliteration: true,
   transliterationSource: "tggsp",
@@ -118,6 +172,17 @@ export const defaultPreferences: ReaderPreferences = {
   hiddenHomeModules: [],
   onboardingComplete: false,
   showExperimentalFeatures: true,
+  filterViews: {
+    search: {
+      current: defaultSearchFilters,
+      defaultValue: defaultSearchFilters,
+    },
+    browse: {
+      current: defaultBrowseFilters,
+      defaultValue: defaultBrowseFilters,
+    },
+  },
+  seenGuideTips: [],
 };
 
 export const defaultPersonalData: PersonalData = {
@@ -131,6 +196,7 @@ export const defaultPersonalData: PersonalData = {
   savedSearches: [],
   lastAngBySource: {},
   keertanTests: [],
+  feedbackRecords: [],
   myBaniIds: [],
 };
 

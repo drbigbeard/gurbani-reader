@@ -1,6 +1,6 @@
 {
   "appId": "app.gurbani.reader.local",
-  "appName": "Gurbani Reader",
+  "appName": "Shabad Sojhi",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

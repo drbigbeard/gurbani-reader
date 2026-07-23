@@ -46,7 +46,9 @@ async function worker() {
   }
 }
 
-await Promise.all(Array.from({ length: Number(process.env.SNAPSHOT_CONCURRENCY ?? 8) }, worker));
+// BaniDB deliberately rate-limits sustained bursts. Keep the default modest so
+// clean CI builds do not repeatedly abandon a nearly-complete snapshot.
+await Promise.all(Array.from({ length: Number(process.env.SNAPSHOT_CONCURRENCY ?? 3) }, worker));
 const generatedAt = process.env.SNAPSHOT_GENERATED_AT ?? new Date().toISOString();
 const manifestCore = {
   format: 'gurbani-reader-v013-banidb-snapshot', generatedAt,
@@ -69,18 +71,36 @@ console.log(JSON.stringify({ outputRoot, files: manifestRows.length,
 
 async function fetchWithRetry(url) {
   let lastError;
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
     try {
       const response = await fetch(url, { headers: { Accept: 'application/json', 'user-agent': 'GurbaniReaderPersonal/0.14' },
         signal: AbortSignal.timeout(45_000) });
-      if (!response.ok) throw new Error(`BaniDB ${response.status} for ${url}`);
+      if (!response.ok) {
+        const error = new Error(`BaniDB ${response.status} for ${url}`);
+        error.status = response.status;
+        error.retryAfter = retryAfterMilliseconds(response.headers.get('retry-after'));
+        throw error;
+      }
       return await response.json();
     } catch (error) {
       lastError = error;
-      if (attempt < 4) await new Promise(resolveDelay => setTimeout(resolveDelay, attempt * 750));
+      if (attempt < 8) {
+        const exponential = Math.min(60_000, 1_500 * (2 ** (attempt - 1)));
+        const delay = error.retryAfter ?? exponential;
+        const jitter = Math.floor(Math.random() * 500);
+        await new Promise(resolveDelay => setTimeout(resolveDelay, delay + jitter));
+      }
     }
   }
   throw lastError;
+}
+
+function retryAfterMilliseconds(value) {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1_000);
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - Date.now());
 }
 
 function range(from, to) { return Array.from({ length: to - from + 1 }, (_, index) => from + index); }

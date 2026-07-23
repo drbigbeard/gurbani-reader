@@ -12,7 +12,7 @@ export interface CorpusGateway {
   sources(): Promise<SourceWorkOption[]>;
   corpusInfo(): Promise<CorpusInfo>;
   rankedForms(limit?: number, sourceWorkId?: string): Promise<RankedForm[]>;
-  rankedFormsPage(sourceWorkId?: string, letter?: string, limit?: number, offset?: number): Promise<FrequencyPage>;
+  rankedFormsPage(sourceWorkId?: string, letters?: string | string[], limit?: number, offset?: number, sort?: "count" | "name"): Promise<FrequencyPage>;
   contributorSummaries(limit?: number, sourceWorkId?: string): Promise<ContributorSummary[]>;
   glossary(query: string, limit?: number): Promise<GlossaryResult[]>;
   getTextUnit(textUnitId: string): Promise<ShabadView>;
@@ -25,7 +25,7 @@ export interface CorpusGateway {
   groupedFrequency(forms: string[], filters?: SearchFilters): Promise<GroupedFrequency>;
   raagSummaries(sourceWorkId?: string): Promise<RaagSummary[]>;
   raagContributorSummaries(raag: string, sourceWorkId?: string): Promise<RaagContributorSummary[]>;
-  raagUnits(raag: string, sourceWorkId?: string, limit?: number, offset?: number, contributorId?: string): Promise<TextUnitSummary[]>;
+  raagUnits(raag: string, sourceWorkId?: string, limit?: number, offset?: number, contributorIds?: string | string[]): Promise<TextUnitSummary[]>;
   namedBanis(sourceWorkId?: string): Promise<BaniSummary[]>;
   getBani(baniId: string): Promise<BaniView>;
   tggspCollections(): Promise<TggspCollectionSummary[]>;

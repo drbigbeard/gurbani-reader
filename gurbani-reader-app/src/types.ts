@@ -11,17 +11,39 @@ export type Screen =
   | "tggsp"
   | "glossary"
   | "saved"
+  | "feedback"
+  | "help"
   | "settings"
   | "sources";
 export type SearchMode = "auto" | "theme";
 
 export interface SearchFilters {
+  /** Multi-select facets. Empty means no restriction for that facet. */
+  sourceWorkIds: string[];
+  raags: string[];
+  contributorIds: string[];
+  resultTypes: SearchResultType[];
+  tggspCoverages: Array<"any" | "translation" | "word-analysis" | "extended">;
+  /** Legacy scalar fields are retained so v0.15/v0.16 histories still import. */
   sourceWorkId: "all" | string;
   raag: string;
   contributorId: string;
   tggspOnly: boolean;
   tggspCoverage?: "" | "any" | "translation" | "word-analysis" | "extended";
   providerContentTypes: string[];
+}
+
+export interface BrowseFilterState {
+  baniCollections: Array<"nitnem" | "vaaran" | "life">;
+  baniAvailability: Array<"tggsp">;
+  baniPersonal: Array<"saved">;
+  baniSort: "name" | "count";
+  contributorTypes: Array<"guru" | "bhagat" | "bhatt" | "other">;
+  contributorSort: "name" | "count";
+  raagGroups: Array<"principal" | "other">;
+  raagSort: "scripture" | "name" | "count";
+  wordLetters: string[];
+  wordSort: "count" | "name";
 }
 
 export interface CanonicalLine {

@@ -1,0 +1,58 @@
+name: Validate iOS build
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: gurbani-reader-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: gurbani-reader-app/package-lock.json
+      - run: npm ci
+      - name: Restore checksummed v5 base reading database
+        run: npm run corpus:restore
+      - name: Fetch and verify the v0.13 BaniDB source snapshot
+        env:
+          SNAPSHOT_GENERATED_AT: 2026-07-19T00:00:00.000Z
+          EXPECTED_SNAPSHOT_SHA256: e49b1f372aa59e59cb8ba0a9a5c97d72491fe58089ad43d7148416aaf6886f38
+        run: npm run data:fetch-v013 -- "$RUNNER_TEMP/v013-banidb-snapshot"
+      - name: Build the current reading database
+        run: |
+          npm run data:upgrade-v6 -- public/assets/databases/gurbani_reader_v5SQLite.db public/assets/databases/gurbani_reader_v6SQLite.db "$RUNNER_TEMP/v013-banidb-snapshot"
+          npm run data:upgrade-v7 -- public/assets/databases/gurbani_reader_v6SQLite.db public/assets/databases/gurbani_reader_v7SQLite.db
+          npm run data:upgrade-v8 -- public/assets/databases/gurbani_reader_v7SQLite.db public/assets/databases/gurbani_reader_v8SQLite.db
+      - run: npm run audit:rc
+      - run: npm run ios:prepare
+      - run: npm run ios:audit
+      - name: Compile with the Apple toolchain
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/GurbaniReaderDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Upload compiled simulator build for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gurbani-Reader-v0.16.0-rc1-iOS-Simulator
+          path: ${{ runner.temp }}/GurbaniReaderDerivedData/Build/Products/Debug-iphonesimulator/App.app
+          if-no-files-found: error
+
