@@ -90,9 +90,15 @@ In Apple Developer → Certificates, Identifiers & Profiles → Profiles:
 
 In App Store Connect → Users and Access → Integrations → App Store Connect API:
 
-1. Generate a team API key with **App Manager** access.
-2. Record the issuer ID and key ID.
-3. Download the `.p8` private key. Apple permits this download only once.
+1. Generate a team API key named `Shabad Sojhi GitHub TestFlight`.
+2. Select **Developer** access. This is the least-privilege role Apple permits
+   to upload builds; App Manager access is not required by this workflow.
+3. Record the issuer ID and key ID.
+4. Download the `.p8` private key. Apple permits this download only once.
+
+Apple team API keys apply across every app in the developer account and cannot
+be restricted to one app. The key's name is for reference only and cannot be
+changed after generation.
 
 Do not paste the key or certificate into chat or commit them to Git.
 
