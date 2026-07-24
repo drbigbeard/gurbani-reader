@@ -19,8 +19,8 @@ jobs:
         working-directory: gurbani-reader-app
     env:
       IOS_BUNDLE_ID: com.drbigbeard.shabadsojhi
-      ARCHIVE_PATH: ${{ runner.temp }}/ShabadSojhi.xcarchive
-      EXPORT_PATH: ${{ runner.temp }}/ShabadSojhiExport
+      ARCHIVE_PATH: /tmp/ShabadSojhi.xcarchive
+      EXPORT_PATH: /tmp/ShabadSojhiExport
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
