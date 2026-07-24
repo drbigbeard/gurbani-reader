@@ -43,7 +43,6 @@ jobs:
           APPLE_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_BASE64 }}
           APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
@@ -52,7 +51,6 @@ jobs:
             APPLE_DISTRIBUTION_CERTIFICATE_BASE64 \
             APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD \
             APPLE_PROVISIONING_PROFILE_BASE64 \
-            APPLE_TEAM_ID \
             APP_STORE_CONNECT_KEY_ID \
             APP_STORE_CONNECT_ISSUER_ID \
             APP_STORE_CONNECT_PRIVATE_KEY_BASE64
@@ -86,7 +84,6 @@ jobs:
           APPLE_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_BASE64 }}
           APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           CERTIFICATE_PATH="$RUNNER_TEMP/distribution.p12"
           PROFILE_PATH="$RUNNER_TEMP/shabad-sojhi.mobileprovision"
@@ -118,22 +115,19 @@ jobs:
           PROFILE_TEAM_ID="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$PROFILE_PLIST")"
           PROFILE_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PROFILE_PLIST")"
 
-          test "$PROFILE_TEAM_ID" = "$APPLE_TEAM_ID" || {
-            echo "::error::Provisioning profile belongs to team $PROFILE_TEAM_ID, not $APPLE_TEAM_ID"
-            exit 1
-          }
-          test "$PROFILE_APP_ID" = "$APPLE_TEAM_ID.$IOS_BUNDLE_ID" || {
-            echo "::error::Provisioning profile is for $PROFILE_APP_ID, not $APPLE_TEAM_ID.$IOS_BUNDLE_ID"
+          test "$PROFILE_APP_ID" = "$PROFILE_TEAM_ID.$IOS_BUNDLE_ID" || {
+            echo "::error::Provisioning profile is for $PROFILE_APP_ID, not $PROFILE_TEAM_ID.$IOS_BUNDLE_ID"
             exit 1
           }
 
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
           echo "profile_name=$PROFILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "team_id=$PROFILE_TEAM_ID" >> "$GITHUB_OUTPUT"
 
       - name: Archive signed iOS application
         env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_TEAM_ID: ${{ steps.signing.outputs.team_id }}
           PROFILE_NAME: ${{ steps.signing.outputs.profile_name }}
         run: |
           xcodebuild \
@@ -151,7 +145,7 @@ jobs:
 
       - name: Export signed IPA
         env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_TEAM_ID: ${{ steps.signing.outputs.team_id }}
           PROFILE_NAME: ${{ steps.signing.outputs.profile_name }}
         run: |
           EXPORT_OPTIONS="$RUNNER_TEMP/ExportOptions.plist"
