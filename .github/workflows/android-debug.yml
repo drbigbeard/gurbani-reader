@@ -102,5 +102,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: v0.16.0-rc.3
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Shabad Sojhi v0.16 RC3" --notes-file ../RELEASE_NOTES_v0.16-rc3.md
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Shabad Sojhi v0.16 RC3" --notes-file RELEASE_NOTES_v0.16-rc3.md
           gh release upload "$TAG" Shabad-Sojhi-v0.16.0-rc3-Android.apk --clobber
