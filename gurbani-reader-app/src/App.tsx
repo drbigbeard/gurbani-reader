@@ -3,11 +3,22 @@ import type { CSSProperties, ReactNode } from "react";
 import { Chrome } from "./components/Chrome";
 import { DataFooter, EmptyMetric, PageHeading } from "./components/Common";
 import { GurmukhiKeyboard } from "./components/GurmukhiKeyboard";
+import { FilterButton, FilterSheet } from "./components/FilterSheet";
+import {
+  FeedbackCenter,
+  FeedbackComposer,
+} from "./components/Feedback";
 import { Icon } from "./components/Icon";
 import { ProviderLayers } from "./components/ProviderLayers";
 import { SearchBar } from "./components/SearchBar";
 import { TextControls } from "./components/TextControls";
 import { exportBackup, parseBackup } from "./lib/backup";
+import {
+  defaultBrowseFilters,
+  defaultSearchFilters,
+  normalizeBrowseFilters,
+  normalizeSearchFilters,
+} from "./lib/filters";
 import { corpusGateway } from "./lib/gateway";
 import { useNavigation } from "./lib/navigation";
 import {
@@ -29,6 +40,7 @@ import type {
   BaniSection,
   BaniSummary,
   BaniView,
+  BrowseFilterState,
   CanonicalLine,
   ConcordancePage,
   ContributorSummary,
@@ -63,21 +75,11 @@ const emptyConcordance: ConcordancePage = {
   matches: [],
 };
 type BrowseTab = "banis" | "contributors" | "raags" | "words";
-const defaultSearchFilters: SearchFilters = {
-  sourceWorkId: "all",
-  raag: "",
-  contributorId: "",
-  tggspOnly: false,
-  tggspCoverage: "",
-  providerContentTypes: [],
-};
 
 export default function App() {
   const { screen, navigate, back, exitHint } = useNavigation();
   const [query, setQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("auto");
-  const [searchFilters, setSearchFilters] =
-    useState<SearchFilters>(defaultSearchFilters);
   const [search, setSearch] = useState<CorpusSearchResponse>(emptySearch);
   const [sources, setSources] = useState<SourceWorkOption[]>([]);
   const [sourceWorkId, setSourceWorkId] = useState("source:G");
@@ -87,7 +89,6 @@ export default function App() {
   const [sabad, setSabad] = useState<ShabadView | null>(null);
   const [rankings, setRankings] = useState<RankedForm[]>([]);
   const [rankingTotal, setRankingTotal] = useState(0);
-  const [wordLetter, setWordLetter] = useState("");
   const [contributors, setContributors] = useState<ContributorSummary[]>([]);
   const [searchContributors, setSearchContributors] = useState<
     ContributorSummary[]
@@ -103,7 +104,7 @@ export default function App() {
   const [raagContributors, setRaagContributors] = useState<
     RaagContributorSummary[]
   >([]);
-  const [raagContributor, setRaagContributor] = useState("");
+  const [raagContributor, setRaagContributor] = useState<string[]>([]);
   const [raagUnits, setRaagUnits] = useState<TextUnitSummary[]>([]);
   const [banis, setBanis] = useState<BaniSummary[]>([]);
   const [bani, setBani] = useState<BaniView | null>(null);
@@ -117,6 +118,7 @@ export default function App() {
   const [wordStats, setWordStats] = useState<WordStats | null>(null);
   const [wordFilters, setWordFilters] = useState<SearchFilters>({
     ...defaultSearchFilters,
+    sourceWorkIds: ["source:G"],
     sourceWorkId: "source:G",
   });
   const [concordance, setConcordance] =
@@ -132,6 +134,9 @@ export default function App() {
   const [savedLines, setSavedLines] = useState<CanonicalLine[]>([]);
   const [historyUnits, setHistoryUnits] = useState<TextUnitSummary[]>([]);
   const [matchedLineId, setMatchedLineId] = useState<string | null>(null);
+  const [lastVoiceAlternatives, setLastVoiceAlternatives] = useState<string[]>(
+    [],
+  );
   const [preferences, setPreferences] = usePersistentState(
     "gurbani:preferences:v3",
     defaultPreferences,
@@ -140,6 +145,33 @@ export default function App() {
     "gurbani:personal:v1",
     defaultPersonalData,
   );
+  const activeFilterViews = preferences.filterViews ?? defaultPreferences.filterViews;
+  const searchFilterMemory = activeFilterViews.search ?? defaultPreferences.filterViews.search;
+  const searchFilters = normalizeSearchFilters(searchFilterMemory.current);
+  const browseFilterMemory = activeFilterViews.browse ?? defaultPreferences.filterViews.browse;
+  const browseViewFilters = normalizeBrowseFilters(browseFilterMemory.current);
+  const setSearchFilters = (next: SearchFilters) =>
+    setPreferences((current) => ({
+      ...current,
+      filterViews: {
+        ...(current.filterViews ?? defaultPreferences.filterViews),
+        search: {
+          ...((current.filterViews ?? defaultPreferences.filterViews).search ?? defaultPreferences.filterViews.search),
+          current: normalizeSearchFilters(next),
+        },
+      },
+    }));
+  const setBrowseViewFilters = (next: BrowseFilterState) =>
+    setPreferences((current) => ({
+      ...current,
+      filterViews: {
+        ...(current.filterViews ?? defaultPreferences.filterViews),
+        browse: {
+          ...((current.filterViews ?? defaultPreferences.filterViews).browse ?? defaultPreferences.filterViews.browse),
+          current: normalizeBrowseFilters(next),
+        },
+      },
+    }));
   const currentSource = sources.find((source) => source.id === sourceWorkId);
 
   useEffect(() => {
@@ -201,7 +233,13 @@ export default function App() {
         corpusGateway.corpusInfo(),
         corpusGateway.sources(),
         corpusGateway.getLines(resumeAng, source),
-        corpusGateway.rankedFormsPage(source, "", 100, 0),
+        corpusGateway.rankedFormsPage(
+          source,
+          browseViewFilters.wordLetters,
+          100,
+          0,
+          browseViewFilters.wordSort,
+        ),
         corpusGateway.contributorSummaries(1000, source),
         corpusGateway.raagSummaries(source),
         corpusGateway.namedBanis(source),
@@ -218,7 +256,6 @@ export default function App() {
       setAngLines(lines);
       setRankings(formPage.forms);
       setRankingTotal(formPage.total);
-      setWordLetter("");
       setContributors(people);
       setRaags(raagRows);
       setBanis(baniRows);
@@ -331,11 +368,12 @@ export default function App() {
   async function openRaag(row: RaagSummary) {
     setBusy(true);
     setSelectedRaag(row);
-    setRaagContributor("");
+    const rememberedContributors = storedStringList(`shabad-sojhi:raag-filter-current:${row.id}`);
+    setRaagContributor(rememberedContributors);
     try {
       const [people, units] = await Promise.all([
         corpusGateway.raagContributorSummaries(row.name, sourceWorkId),
-        corpusGateway.raagUnits(row.name, sourceWorkId, 50, 0),
+        corpusGateway.raagUnits(row.name, sourceWorkId, 50, 0, rememberedContributors),
       ]);
       setRaagContributors(people);
       setRaagUnits(units);
@@ -346,16 +384,16 @@ export default function App() {
       setBusy(false);
     }
   }
-  async function filterRaag(contributorId: string) {
+  async function filterRaag(contributorIds: string[]) {
     if (!selectedRaag) return;
-    setRaagContributor(contributorId);
+    setRaagContributor(contributorIds);
     setRaagUnits(
       await corpusGateway.raagUnits(
         selectedRaag.name,
         sourceWorkId,
         50,
         0,
-        contributorId || undefined,
+        contributorIds,
       ),
     );
   }
@@ -366,11 +404,12 @@ export default function App() {
       sourceWorkId,
       50,
       raagUnits.length,
-      raagContributor || undefined,
+      raagContributor,
     );
     setRaagUnits((v) => [...v, ...rows]);
   }
   async function runSearch() {
+    setLastVoiceAlternatives([]);
     const term = query.trim();
     setBusy(true);
     try {
@@ -405,6 +444,7 @@ export default function App() {
       ...new Set(terms.map((value) => value.trim()).filter(Boolean)),
     ];
     if (!alternatives.length) return;
+    setLastVoiceAlternatives(alternatives);
     const primary = alternatives[0];
     setQuery(primary);
     setBusy(true);
@@ -463,10 +503,7 @@ export default function App() {
     }
   }
   async function restoreSearch(row: SavedSearch) {
-    const filters = {
-      ...defaultSearchFilters,
-      ...row.filters,
-    } as SearchFilters;
+    const filters = normalizeSearchFilters(row.filters);
     const mode = row.mode === "theme" ? "theme" : "auto";
     setQuery(row.query);
     setSearchFilters(filters);
@@ -493,7 +530,13 @@ export default function App() {
   async function openWord(raw: string, filters?: SearchFilters) {
     const word = cleanWord(raw);
     if (!word) return;
-    const scope = filters ?? { ...defaultSearchFilters, sourceWorkId };
+    const scope = normalizeSearchFilters(
+      filters ?? {
+        ...defaultSearchFilters,
+        sourceWorkIds: [sourceWorkId],
+        sourceWorkId,
+      },
+    );
     setBusy(true);
     setSelectedWord(word);
     setWordFilters(scope);
@@ -501,7 +544,11 @@ export default function App() {
       const [stats, page, related] = await Promise.all([
         corpusGateway.exactWordStats(word, scope),
         corpusGateway.concordance(word, scope, 50, 0),
-        corpusGateway.relatedForms(word, scope.sourceWorkId, 30),
+        corpusGateway.relatedForms(
+          word,
+          scope.sourceWorkIds.length === 1 ? scope.sourceWorkIds[0] : sourceWorkId,
+          30,
+        ),
       ]);
       setWordStats(stats);
       setConcordance(page);
@@ -560,15 +607,19 @@ export default function App() {
     if (position) void openSabad(position);
     else void loadAng(ang);
   }
-  async function loadRankings(letter: string, reset = true) {
+  async function loadRankings(
+    letters: string[],
+    sort: "count" | "name",
+    reset = true,
+  ) {
     const offset = reset ? 0 : rankings.length;
     const page = await corpusGateway.rankedFormsPage(
       sourceWorkId,
-      letter,
+      letters,
       100,
       offset,
+      sort,
     );
-    setWordLetter(letter);
     setRankingTotal(page.total);
     setRankings((current) =>
       reset ? page.forms : [...current, ...page.forms],
@@ -588,7 +639,7 @@ export default function App() {
       });
       setMessage("Backup imported.");
     } catch {
-      setError("That file is not a valid Gurbani Reader backup.");
+      setError("That file is not a valid Shabad Sojhi backup.");
     }
   }
 
@@ -628,6 +679,15 @@ export default function App() {
               setPreferences((p) => ({ ...p, onboardingComplete: true }))
             }
             openSources={() => navigate("sources")}
+            start={(goal) => {
+              setPreferences((p) => ({
+                ...p,
+                onboardingComplete: true,
+                readerMode: goal === "study" ? "study" : p.readerMode,
+              }));
+              if (goal === "search") navigate("search");
+              else showBrowse("banis");
+            }}
           />
         )}
         {busy && <div className="busy">Opening…</div>}
@@ -705,7 +765,21 @@ export default function App() {
               raags={raags}
               rankings={rankings}
               rankingTotal={rankingTotal}
-              wordLetter={wordLetter}
+              filters={browseViewFilters}
+              filterDefault={normalizeBrowseFilters(browseFilterMemory.defaultValue)}
+              setFilters={setBrowseViewFilters}
+              setFilterDefault={(next) =>
+                setPreferences((current) => ({
+                  ...current,
+                  filterViews: {
+                    ...(current.filterViews ?? defaultPreferences.filterViews),
+                    browse: {
+                      current: (current.filterViews ?? defaultPreferences.filterViews).browse.current,
+                      defaultValue: next,
+                    },
+                  },
+                }))
+              }
               loadRankings={loadRankings}
               openBani={openBani}
               openTggspCollection={openTggspCollection}
@@ -744,11 +818,27 @@ export default function App() {
         {screen === "search" && (
           <SearchView
             query={query}
-            setQuery={setQuery}
+            setQuery={(value) => {
+              setQuery(value);
+              setLastVoiceAlternatives([]);
+            }}
             mode={searchMode}
             setMode={setSearchMode}
             filters={searchFilters}
             setFilters={setSearchFilters}
+            filterDefault={normalizeSearchFilters(searchFilterMemory.defaultValue)}
+            setFilterDefault={(next) =>
+              setPreferences((current) => ({
+                ...current,
+                filterViews: {
+                  ...(current.filterViews ?? defaultPreferences.filterViews),
+                  search: {
+                    current: (current.filterViews ?? defaultPreferences.filterViews).search.current,
+                    defaultValue: next,
+                  },
+                },
+              }))
+            }
             sources={sources}
             run={runSearch}
             runVoice={runVoiceSearch}
@@ -782,6 +872,9 @@ export default function App() {
               }))
             }
             showExperimental={preferences.showExperimentalFeatures}
+            voiceAlternatives={
+              lastVoiceAlternatives
+            }
             personal={personal}
             setPersonal={setPersonal}
           />
@@ -841,6 +934,8 @@ export default function App() {
             openWord={openWord}
             restoreSearch={restoreSearch}
             openSources={() => navigate("sources")}
+            openHelp={() => navigate("help")}
+            openFeedback={() => navigate("feedback")}
             exportData={() =>
               exportBackup(personal, preferences)
                 .then(() => setMessage("Backup ready to save or share."))
@@ -850,6 +945,30 @@ export default function App() {
           />
         )}
         {screen === "sources" && <SourcesGuide close={() => back()} />}
+        {screen === "feedback" && (
+          <FeedbackCenter
+            records={personal.feedbackRecords ?? []}
+            setRecords={(records) =>
+              setPersonal((current) => ({
+                ...current,
+                feedbackRecords: records,
+              }))
+            }
+            notify={setMessage}
+            fail={setError}
+          />
+        )}
+        {screen === "help" && (
+          <HelpGuide
+            openSources={() => navigate("sources")}
+            replay={() =>
+              setPreferences((current) => ({
+                ...current,
+                onboardingComplete: false,
+              }))
+            }
+          />
+        )}
         {screen === "tggsp" && (
           <section>
             <PageHeading
@@ -1108,11 +1227,19 @@ function Home({
     <section>
       <PageHeading
         eyebrow="Personal reading & understanding"
-        title="Gurbani Reader"
+        title="Shabad Sojhi"
       >
         Read continuously, find exact forms, and explore by Bani, contributor or
         Raag.
       </PageHeading>
+      <CoachTip
+        id="home-search"
+        preferences={preferences}
+        setPreferences={setPreferences}
+        title="Find Gurbani from the words you remember"
+      >
+        Tap <Icon name="mic" /> to speak, or <span className="gurmukhi">ਕ</span> for the built-in Gurmukhi keyboard. Roman spelling is supported too.
+      </CoachTip>
       {order.map((item, index) =>
         item === "ang" || item === "recent" ? (
           index === firstReaderIndex ? (
@@ -1229,6 +1356,9 @@ function AngReader({
           <button>Go</button>
         </form>
       </div>
+      <CoachTip id="reader-controls" preferences={props.preferences} setPreferences={props.setPreferences} title="Read or open deeper study tools">
+        Read keeps actions out of the way. Choose Study, then tap a line to bookmark, reflect, collect or explore a word. Aa controls appearance; Layers controls translations and analysis.
+      </CoachTip>
       <TextControls
         preferences={props.preferences}
         setPreferences={props.setPreferences}
@@ -1271,7 +1401,7 @@ function SabadReader({
   );
   const copyReference = async () => {
     await copyText(
-      `${sabad.preview}\n${sabad.contributorName} · ${sabad.raag} · Ang ${range(sabad.firstAng, sabad.lastAng)}\nGurbani Reader Shabad reference: ${sabad.sourceWorkId} / ${sabad.id}`,
+      `${sabad.preview}\n${sabad.contributorName} · ${sabad.raag} · Ang ${range(sabad.firstAng, sabad.lastAng)}\nShabad Sojhi reference: ${sabad.sourceWorkId} / ${sabad.id}`,
     );
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
@@ -1305,6 +1435,9 @@ function SabadReader({
           Find this line on YouTube ↗
         </button>
       </div>
+      <CoachTip id="reader-controls" preferences={props.preferences} setPreferences={props.setPreferences} title="Read or open deeper study tools">
+        Read keeps actions out of the way. Choose Study, then tap a line to bookmark, reflect, collect or explore a word. Aa controls appearance; Layers controls translations and analysis.
+      </CoachTip>
       <TextControls
         preferences={props.preferences}
         setPreferences={props.setPreferences}
@@ -1577,6 +1710,14 @@ function BaniReader({ bani, ...props }: { bani: BaniView } & CommonReader) {
           <p>{bani.introduction}</p>
         </details>
       )}
+      <CoachTip
+        id="reader-controls"
+        preferences={props.preferences}
+        setPreferences={props.setPreferences}
+        title="Read or open deeper study tools"
+      >
+        Read keeps actions out of the way. Choose Study, then tap a line to bookmark, reflect, collect or explore a word. Aa controls appearance; Layers controls translations and analysis.
+      </CoachTip>
       <TextControls
         preferences={props.preferences}
         setPreferences={props.setPreferences}
@@ -1597,8 +1738,15 @@ function Browse(p: {
   raags: RaagSummary[];
   rankings: RankedForm[];
   rankingTotal: number;
-  wordLetter: string;
-  loadRankings: (letter: string, reset?: boolean) => Promise<void>;
+  filters: BrowseFilterState;
+  filterDefault: BrowseFilterState;
+  setFilters: (value: BrowseFilterState) => void;
+  setFilterDefault: (value: BrowseFilterState) => void;
+  loadRankings: (
+    letters: string[],
+    sort: "count" | "name",
+    reset?: boolean,
+  ) => Promise<void>;
   openBani: (v: BaniSummary) => Promise<void>;
   openTggspCollection: (v: TggspCollectionSummary) => Promise<void>;
   openContributor: (v: ContributorSummary) => Promise<void>;
@@ -1610,10 +1758,9 @@ function Browse(p: {
   myBaniIds: string[];
   toggleMyBani: (id: string) => void;
 }) {
-  const [baniCategory, setBaniCategory] = useState("all");
-  const [contributorType, setContributorType] = useState("all");
-  const [sortOrder, setSortOrder] = useState<"name" | "count">("name");
+  const [filterOpen, setFilterOpen] = useState(false);
   const [jump, setJump] = useState(String(p.currentAng));
+  const f = normalizeBrowseFilters(p.filters);
   const q = fold(p.filter);
   const dailyOrder = [
     "japji",
@@ -1626,22 +1773,20 @@ function Browse(p: {
   ];
   const baniRows = p.banis
     .filter((x) => fold(baniSearchText(x)).includes(q))
-    .filter((x) =>
-      baniCategory === "all"
-        ? true
-        : baniCategory === "nitnem"
-          ? dailyOrder.includes(x.token)
-          : baniCategory === "mine"
-            ? p.myBaniIds.includes(x.id)
-            : baniCategory === "tggsp"
-              ? Boolean(x.tggspAvailable)
-              : baniCategory === "vaaran"
-                ? baniGroup(x) === "vaaran"
-                : false,
+    .filter(
+      (x) =>
+        (!f.baniCollections.length ||
+          f.baniCollections.some(
+            (group) =>
+              (group === "nitnem" && dailyOrder.includes(x.token)) ||
+              (group === "vaaran" && baniGroup(x) === "vaaran"),
+          )) &&
+        (!f.baniAvailability.length || Boolean(x.tggspAvailable)) &&
+        (!f.baniPersonal.length || p.myBaniIds.includes(x.id)),
     )
     .sort((a, b) =>
-      baniCategory === "nitnem"
-        ? dailyOrder.indexOf(a.token) - dailyOrder.indexOf(b.token)
+      f.baniSort === "count"
+        ? b.verseCount - a.verseCount
         : baniDisplayName(a).localeCompare(baniDisplayName(b), "en", {
             sensitivity: "base",
           }),
@@ -1649,25 +1794,39 @@ function Browse(p: {
   const tggspRows = p.tggspCollections
     .filter((x) => fold(`${x.titleEn} ${x.titlePa} ${x.code}`).includes(q))
     .filter((x) => tggspLifeEventOrder(x.code) < 99)
+    .filter(() => f.baniCollections.includes("life"))
+    .filter(() => !f.baniPersonal.length)
     .sort((a, b) => tggspLifeEventOrder(a.code) - tggspLifeEventOrder(b.code));
   const contributorRows = p.contributors
     .filter((x) => fold(x.name).includes(q))
     .filter(
       (x) =>
-        contributorType === "all" ||
-        contributorGroup(x.type) === contributorType,
+        !f.contributorTypes.length ||
+        f.contributorTypes.includes(contributorGroup(x.type)),
     )
     .sort((a, b) =>
-      sortOrder === "count"
+      f.contributorSort === "count"
         ? b.unitCount - a.unitCount
         : a.name.localeCompare(b.name),
     );
   const mainRaags = p.raags
     .filter((row) => isMainRaag(row.name))
-    .sort((a, b) => raagOrder(a.name) - raagOrder(b.name));
+    .filter(() => !f.raagGroups.length || f.raagGroups.includes("principal"))
+    .sort((a, b) =>
+      f.raagSort === "count"
+        ? b.unitCount - a.unitCount
+        : f.raagSort === "name"
+          ? a.name.localeCompare(b.name)
+          : raagOrder(a.name) - raagOrder(b.name),
+    );
   const otherHeadings = p.raags
     .filter((row) => !isMainRaag(row.name))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .filter(() => !f.raagGroups.length || f.raagGroups.includes("other"))
+    .sort((a, b) =>
+      f.raagSort === "count"
+        ? b.unitCount - a.unitCount
+        : a.name.localeCompare(b.name),
+    );
   return (
     <section>
       <PageHeading eyebrow="Read" title="Choose what to read">
@@ -1713,61 +1872,12 @@ function Browse(p: {
               </span>
               <button>Go</button>
             </form>
-            <details className="bani-list-filter">
-              <summary>
-                <Icon name="filter_list" />{" "}
-                {baniCategory === "all"
-                  ? "All Banis · A–Z"
-                  : baniCategory === "mine"
-                    ? "Saved Banis"
-                    : baniCategory === "tggsp"
-                      ? "TGGSP available"
-                      : baniCategory === "life"
-                        ? "Ceremonies & life events"
-                        : title(baniCategory)}
-              </summary>
-              <div>
-                {[
-                  ["all", "All Banis · A–Z"],
-                  ["nitnem", "Nitnem"],
-                  ["mine", "Saved Banis"],
-                  ["tggsp", "TGGSP available"],
-                  ["vaaran", "Vaars"],
-                  ["life", "Ceremonies & life events"],
-                ].map(([value, label]) => (
-                  <button
-                    key={value}
-                    className={baniCategory === value ? "active" : ""}
-                    onClick={() => setBaniCategory(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </details>
           </>
         )}
-        {p.tab === "contributors" && (
-          <>
-            <select
-              value={contributorType}
-              onChange={(e) => setContributorType(e.target.value)}
-            >
-              <option value="all">All contributor types</option>
-              <option value="guru">Gurus</option>
-              <option value="bhagat">Bhagats</option>
-              <option value="bhatt">Bhatts</option>
-              <option value="other">Other contributors</option>
-            </select>
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value as "name" | "count")}
-            >
-              <option value="name">A–Z</option>
-              <option value="count">Most Shabads</option>
-            </select>
-          </>
-        )}
+        <FilterButton
+          count={browseFilterCount(f, p.tab)}
+          onClick={() => setFilterOpen(true)}
+        />
       </div>
       {p.tab !== "words" ? (
         <input
@@ -1792,44 +1902,18 @@ function Browse(p: {
         </aside>
       )}
       {p.tab === "words" && (
-        <>
-          <div className="letter-filter">
-            <button
-              className={!p.wordLetter ? "active" : ""}
-              onClick={() => void p.loadRankings("")}
-            >
-              All
-            </button>
-            {gurmukhiLetters.map((letter) => (
-              <button
-                className={
-                  p.wordLetter === letter ? "active gurmukhi" : "gurmukhi"
-                }
-                onClick={() => void p.loadRankings(letter)}
-                key={letter}
-              >
-                {letter}
-              </button>
-            ))}
-          </div>
-          <p className="result-count">
-            Showing {p.rankings.length.toLocaleString()} of{" "}
-            {p.rankingTotal.toLocaleString()} exact written forms
-            {p.wordLetter && (
-              <>
-                {" "}
-                beginning <span className="gurmukhi">{p.wordLetter}</span>
-              </>
-            )}
-            .
-          </p>
-        </>
+        <p className="result-count">
+          Showing {p.rankings.length.toLocaleString()} of{" "}
+          {p.rankingTotal.toLocaleString()} exact written forms
+          {f.wordLetters.length > 0 && (
+            <> beginning with <span className="gurmukhi">{f.wordLetters.join(" · ")}</span></>
+          )}.
+        </p>
       )}
       <div
         className={`browse-list ${p.tab === "words" ? "compact-words" : ""}`}
       >
         {p.tab === "banis" &&
-          baniCategory !== "life" &&
           baniRows.map((x) => (
             <div className="bani-row" key={x.id}>
               <button onClick={() => void p.openBani(x)}>
@@ -1853,7 +1937,6 @@ function Browse(p: {
             </div>
           ))}
         {p.tab === "banis" &&
-          baniCategory === "life" &&
           tggspRows.map((x) => (
             <button key={x.code} onClick={() => void p.openTggspCollection(x)}>
               <span className="result-badges">
@@ -1923,12 +2006,194 @@ function Browse(p: {
       {p.tab === "words" && p.rankings.length < p.rankingTotal && (
         <button
           className="load-more"
-          onClick={() => void p.loadRankings(p.wordLetter, false)}
+          onClick={() => void p.loadRankings(f.wordLetters, f.wordSort, false)}
         >
           Load 100 more
         </button>
       )}
+      <FilterSheet
+        open={filterOpen}
+        title={p.tab === "banis" ? "All Banis" : title(p.tab)}
+        groups={browseFilterGroups(p.tab)}
+        selected={browseFilterSelection(f, p.tab)}
+        sortOptions={browseSortOptions(p.tab)}
+        sort={browseSortValue(f, p.tab)}
+        onClose={() => setFilterOpen(false)}
+        onApply={(selected, sort) => {
+          const next = applyBrowseSelection(f, p.tab, selected, sort);
+          p.setFilters(next);
+          setFilterOpen(false);
+          if (p.tab === "words") void p.loadRankings(next.wordLetters, next.wordSort);
+        }}
+        onSetDefault={(selected, sort) => {
+          const next = applyBrowseSelection(f, p.tab, selected, sort);
+          p.setFilterDefault(mergeBrowseTab(p.filterDefault, next, p.tab));
+          p.setFilters(next);
+          setFilterOpen(false);
+          if (p.tab === "words") void p.loadRankings(next.wordLetters, next.wordSort);
+        }}
+        onResetDefault={() => {
+          p.setFilters(p.filterDefault);
+          setFilterOpen(false);
+          if (p.tab === "words") void p.loadRankings(p.filterDefault.wordLetters, p.filterDefault.wordSort);
+        }}
+      />
     </section>
+  );
+}
+
+function browseFilterGroups(tab: BrowseTab) {
+  if (tab === "banis")
+    return [
+      {
+        id: "baniCollections",
+        label: "Reading group",
+        options: [
+          { value: "nitnem", label: "Nitnem" },
+          { value: "vaaran", label: "Vaars" },
+          { value: "life", label: "Ceremonies and life events" },
+        ],
+      },
+      {
+        id: "baniAvailability",
+        label: "Analysis available",
+        options: [{ value: "tggsp", label: "TGGSP available" }],
+      },
+      {
+        id: "baniPersonal",
+        label: "Saved",
+        options: [{ value: "saved", label: "Saved Banis" }],
+      },
+    ];
+  if (tab === "contributors")
+    return [
+      {
+        id: "contributorTypes",
+        label: "Contributor type",
+        options: [
+          { value: "guru", label: "Gurus" },
+          { value: "bhagat", label: "Bhagats" },
+          { value: "bhatt", label: "Bhatts" },
+          { value: "other", label: "Other contributors" },
+        ],
+      },
+    ];
+  if (tab === "raags")
+    return [
+      {
+        id: "raagGroups",
+        label: "Index section",
+        options: [
+          { value: "principal", label: "31 principal Raags" },
+          { value: "other", label: "Other musical and structural headings" },
+        ],
+      },
+    ];
+  return [
+    {
+      id: "wordLetters",
+      label: "Initial letters",
+      options: gurmukhiLetters.map((letter) => ({ value: letter, label: letter })),
+    },
+  ];
+}
+
+function browseFilterSelection(
+  filters: BrowseFilterState,
+  tab: BrowseTab,
+): Record<string, string[]> {
+  if (tab === "banis")
+    return {
+      baniCollections: filters.baniCollections,
+      baniAvailability: filters.baniAvailability,
+      baniPersonal: filters.baniPersonal,
+    };
+  if (tab === "contributors") return { contributorTypes: filters.contributorTypes };
+  if (tab === "raags") return { raagGroups: filters.raagGroups };
+  return { wordLetters: filters.wordLetters };
+}
+
+function browseSortOptions(tab: BrowseTab) {
+  if (tab === "raags")
+    return [
+      { value: "scripture", label: "Scripture order" },
+      { value: "name", label: "A–Z" },
+      { value: "count", label: "Most Shabads" },
+    ];
+  return [
+    { value: tab === "words" ? "count" : "name", label: tab === "words" ? "Most occurrences" : "A–Z" },
+    { value: tab === "words" ? "name" : "count", label: tab === "words" ? "Gurmukhi order" : "Most Shabads" },
+  ];
+}
+
+function browseSortValue(filters: BrowseFilterState, tab: BrowseTab) {
+  if (tab === "banis") return filters.baniSort;
+  if (tab === "contributors") return filters.contributorSort;
+  if (tab === "raags") return filters.raagSort;
+  return filters.wordSort;
+}
+
+function applyBrowseSelection(
+  current: BrowseFilterState,
+  tab: BrowseTab,
+  selected: Record<string, string[]>,
+  sort?: string,
+): BrowseFilterState {
+  if (tab === "banis")
+    return normalizeBrowseFilters({
+      ...current,
+      baniCollections: selected.baniCollections as BrowseFilterState["baniCollections"],
+      baniAvailability: selected.baniAvailability as BrowseFilterState["baniAvailability"],
+      baniPersonal: selected.baniPersonal as BrowseFilterState["baniPersonal"],
+      baniSort: (sort ?? current.baniSort) as BrowseFilterState["baniSort"],
+    });
+  if (tab === "contributors")
+    return normalizeBrowseFilters({
+      ...current,
+      contributorTypes: selected.contributorTypes as BrowseFilterState["contributorTypes"],
+      contributorSort: (sort ?? current.contributorSort) as BrowseFilterState["contributorSort"],
+    });
+  if (tab === "raags")
+    return normalizeBrowseFilters({
+      ...current,
+      raagGroups: selected.raagGroups as BrowseFilterState["raagGroups"],
+      raagSort: (sort ?? current.raagSort) as BrowseFilterState["raagSort"],
+    });
+  return normalizeBrowseFilters({
+    ...current,
+    wordLetters: selected.wordLetters,
+    wordSort: (sort ?? current.wordSort) as BrowseFilterState["wordSort"],
+  });
+}
+
+function mergeBrowseTab(
+  target: BrowseFilterState,
+  source: BrowseFilterState,
+  tab: BrowseTab,
+): BrowseFilterState {
+  if (tab === "banis")
+    return {
+      ...target,
+      baniCollections: source.baniCollections,
+      baniAvailability: source.baniAvailability,
+      baniPersonal: source.baniPersonal,
+      baniSort: source.baniSort,
+    };
+  if (tab === "contributors")
+    return {
+      ...target,
+      contributorTypes: source.contributorTypes,
+      contributorSort: source.contributorSort,
+    };
+  if (tab === "raags")
+    return { ...target, raagGroups: source.raagGroups, raagSort: source.raagSort };
+  return { ...target, wordLetters: source.wordLetters, wordSort: source.wordSort };
+}
+
+function browseFilterCount(filters: BrowseFilterState, tab: BrowseTab) {
+  return Object.values(browseFilterSelection(filters, tab)).reduce(
+    (total, values) => total + values.length,
+    0,
   );
 }
 
@@ -1996,28 +2261,51 @@ function RaagView({
 }: {
   raag: RaagSummary;
   people: RaagContributorSummary[];
-  selected: string;
-  filter: (v: string) => Promise<void>;
+  selected: string[];
+  filter: (v: string[]) => Promise<void>;
   units: TextUnitSummary[];
   openSabad: (v: string) => Promise<void>;
   more: () => Promise<void>;
 }) {
+  const [filterOpen, setFilterOpen] = useState(false);
   return (
     <section>
       <PageHeading eyebrow="Raag" title={raag.name}>
         {raag.unitCount.toLocaleString()} Shabads
       </PageHeading>
-      <label className="raag-filter">
-        Contributor within this Raag{" "}
-        <select value={selected} onChange={(e) => void filter(e.target.value)}>
-          <option value="">All contributors</option>
-          {people.map((p) => (
-            <option value={p.id} key={p.id}>
-              {p.name} ({p.unitCount})
-            </option>
-          ))}
-        </select>
-      </label>
+      <FilterButton count={selected.length} onClick={() => setFilterOpen(true)} />
+      <FilterSheet
+        open={filterOpen}
+        title={`Shabads in ${raag.name}`}
+        groups={[{
+          id: "contributors",
+          label: "Contributors within this Raag",
+          options: people.map((person) => ({
+            value: person.id,
+            label: person.name,
+            detail: `${person.unitCount.toLocaleString()} Shabads`,
+          })),
+        }]}
+        selected={{ contributors: selected }}
+        onClose={() => setFilterOpen(false)}
+        onApply={(value) => {
+          window.localStorage.setItem(`shabad-sojhi:raag-filter-current:${raag.id}`, JSON.stringify(value.contributors));
+          void filter(value.contributors);
+          setFilterOpen(false);
+        }}
+        onSetDefault={(value) => {
+          window.localStorage.setItem(`shabad-sojhi:raag-filter-default:${raag.id}`, JSON.stringify(value.contributors));
+          window.localStorage.setItem(`shabad-sojhi:raag-filter-current:${raag.id}`, JSON.stringify(value.contributors));
+          void filter(value.contributors);
+          setFilterOpen(false);
+        }}
+        onResetDefault={() => {
+          const stored = storedStringList(`shabad-sojhi:raag-filter-default:${raag.id}`);
+          window.localStorage.setItem(`shabad-sojhi:raag-filter-current:${raag.id}`, JSON.stringify(stored));
+          void filter(stored);
+          setFilterOpen(false);
+        }}
+      />
       <UnitList units={units} openSabad={openSabad} />
       <button className="load-more" onClick={() => void more()}>
         Load more
@@ -2033,6 +2321,8 @@ type SearchViewProps = {
   setMode: (v: SearchMode) => void;
   filters: SearchFilters;
   setFilters: (v: SearchFilters) => void;
+  filterDefault: SearchFilters;
+  setFilterDefault: (v: SearchFilters) => void;
   sources: SourceWorkOption[];
   run: () => Promise<void>;
   runVoice: (terms: string[]) => Promise<void>;
@@ -2052,13 +2342,115 @@ type SearchViewProps = {
   notify: (v: string) => void;
   fail: (v: string) => void;
   showExperimental: boolean;
+  voiceAlternatives: string[];
   personal: PersonalData;
   setPersonal: CommonReader["setPersonal"];
 };
 
+function searchFilterGroups(
+  sources: SourceWorkOption[],
+  raags: RaagSummary[],
+  contributors: ContributorSummary[],
+) {
+  return [
+    {
+      id: "sourceWorkIds",
+      label: "Texts",
+      options: sources.map((source) => ({ value: source.id, label: source.title })),
+    },
+    {
+      id: "raags",
+      label: "Raags",
+      options: raags.map((raag) => ({
+        value: raag.name,
+        label: raag.name,
+        detail: `${raag.unitCount.toLocaleString()} Shabads`,
+      })),
+    },
+    {
+      id: "contributorIds",
+      label: "Contributors",
+      options: contributors.map((person) => ({
+        value: person.id,
+        label: person.name,
+        detail: `${person.unitCount.toLocaleString()} Shabads`,
+      })),
+    },
+    {
+      id: "tggspCoverages",
+      label: "TGGSP available",
+      options: [
+        { value: "any", label: "Any TGGSP material" },
+        { value: "translation", label: "Translation" },
+        { value: "word-analysis", label: "Etymology" },
+        { value: "extended", label: "Extended interpretation" },
+      ],
+    },
+    {
+      id: "providerContentTypes",
+      label: "TGGSP sections",
+      options: providerFilterOptions.map((option) => ({
+        value: option.id,
+        label: option.label,
+      })),
+    },
+    {
+      id: "resultTypes",
+      label: "Result type",
+      options: [
+        { value: "sabad", label: "Shabads and Gurbani lines" },
+        { value: "translation", label: "Translation and analysis" },
+      ],
+    },
+  ];
+}
+
+function searchFilterSelection(filters: SearchFilters) {
+  const value = normalizeSearchFilters(filters);
+  return {
+    sourceWorkIds: value.sourceWorkIds,
+    raags: value.raags,
+    contributorIds: value.contributorIds,
+    tggspCoverages: value.tggspCoverages,
+    providerContentTypes: value.providerContentTypes,
+    resultTypes: value.resultTypes,
+  };
+}
+
+function applySearchSelection(
+  current: SearchFilters,
+  selected: Record<string, string[]>,
+): SearchFilters {
+  return normalizeSearchFilters({
+    ...current,
+    sourceWorkIds: selected.sourceWorkIds,
+    raags: selected.raags,
+    contributorIds: selected.contributorIds,
+    tggspCoverages: selected.tggspCoverages as SearchFilters["tggspCoverages"],
+    providerContentTypes: selected.providerContentTypes,
+    resultTypes: selected.resultTypes as SearchFilters["resultTypes"],
+    sourceWorkId: "all",
+    raag: "",
+    contributorId: "",
+    tggspOnly: false,
+    tggspCoverage: "",
+  });
+}
+
+function searchFilterCount(filters: SearchFilters) {
+  return Object.values(searchFilterSelection(filters)).reduce(
+    (total, values) => total + values.length,
+    0,
+  );
+}
+
 function SearchView(p: SearchViewProps) {
   const [live, setLive] = useState<CorpusSearchResponse>(emptySearch);
   const [themes, setThemes] = useState<CorpusSearchResponse>(emptySearch);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [feedbackKind, setFeedbackKind] = useState<
+    "search" | "theme" | null
+  >(null);
   const q = fold(p.query);
   useEffect(() => {
     const term = p.query.trim();
@@ -2114,19 +2506,15 @@ function SearchView(p: SearchViewProps) {
   const raagHits = q
     ? p.raags.filter((x) => fold(x.name).includes(q)).slice(0, 10)
     : [];
-  const update = <K extends keyof SearchFilters>(
-    key: K,
-    value: SearchFilters[K],
-  ) => p.setFilters({ ...p.filters, [key]: value });
   const activeScope = [
-    p.filters.sourceWorkId === "all"
-      ? "All texts"
-      : p.sources.find((x) => x.id === p.filters.sourceWorkId)?.title,
-    p.filters.raag && `Raag ${p.filters.raag}`,
-    p.filters.contributorId &&
-      p.contributors.find((x) => x.id === p.filters.contributorId)?.name,
-    p.filters.tggspOnly && "TGGSP available",
-  ].filter(Boolean);
+    ...p.filters.sourceWorkIds.map((id) => ({ facet: "sourceWorkIds", value: id, label: p.sources.find((x) => x.id === id)?.title })),
+    ...p.filters.raags.map((raag) => ({ facet: "raags", value: raag, label: `Raag ${raag}` })),
+    ...p.filters.contributorIds.map((id) => ({ facet: "contributorIds", value: id, label: p.contributors.find((x) => x.id === id)?.name })),
+    ...p.filters.tggspCoverages.map((value) =>
+      ({ facet: "tggspCoverages", value, label: value === "any" ? "TGGSP available" : value === "word-analysis" ? "TGGSP etymology" : `TGGSP ${value}` }),
+    ),
+    ...p.filters.resultTypes.map((value) => ({ facet: "resultTypes", value, label: value === "sabad" ? "Shabads" : title(value) })),
+  ].filter((item) => item.label);
   const displayed = p.response.query === p.query.trim() ? p.response : live;
   return (
     <section>
@@ -2135,20 +2523,10 @@ function SearchView(p: SearchViewProps) {
           Search words, spoken or typed Roman phrases, English, and Gurmukhi
           first-letter sequences.
         </PageHeading>
-        <label className="scope-select">
-          Text
-          <select
-            value={p.filters.sourceWorkId}
-            onChange={(event) => update("sourceWorkId", event.target.value)}
-          >
-            <option value="all">All texts</option>
-            {p.sources.map((source) => (
-              <option value={source.id} key={source.id}>
-                {source.title}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FilterButton
+          count={searchFilterCount(p.filters)}
+          onClick={() => setFilterOpen(true)}
+        />
       </div>
       <SearchBar
         value={p.query}
@@ -2167,113 +2545,47 @@ function SearchView(p: SearchViewProps) {
       </div>
       <div className="scope-chips">
         {activeScope.map((item) => (
-          <span key={String(item)}>{item}</span>
+          <button
+            className="active-filter-chip"
+            key={`${item.facet}:${item.value}`}
+            aria-label={`Remove ${item.label} filter`}
+            onClick={() =>
+              p.setFilters({
+                ...p.filters,
+                [item.facet]: (p.filters[item.facet as keyof SearchFilters] as string[]).filter(
+                  (value) => value !== item.value,
+                ),
+              })
+            }
+          >
+            {item.label} <Icon name="close" />
+          </button>
         ))}
         <button className="save-scope" onClick={p.saveSearch}>
           Save search
         </button>
       </div>
-      <details className="search-filters">
-        <summary>
-          <Icon name="filter_list" /> Filters
-        </summary>
-        <div className="filter-grid">
-          <label>
-            Text
-            <select
-              value={p.filters.sourceWorkId}
-              onChange={(event) => update("sourceWorkId", event.target.value)}
-            >
-              <option value="all">All available texts</option>
-              {p.sources.map((source) => (
-                <option value={source.id} key={source.id}>
-                  {source.title}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Raag
-            <select
-              value={p.filters.raag}
-              onChange={(event) => update("raag", event.target.value)}
-            >
-              <option value="">All Raags</option>
-              {p.raags.map((raag) => (
-                <option key={raag.id + raag.name} value={raag.name}>
-                  {raag.name} ({raag.unitCount})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Contributor
-            <select
-              value={p.filters.contributorId}
-              onChange={(event) => update("contributorId", event.target.value)}
-            >
-              <option value="">All contributors</option>
-              {p.contributors.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.name} ({person.unitCount})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            TGGSP availability
-            <select
-              value={p.filters.tggspCoverage ?? ""}
-              onChange={(event) =>
-                p.setFilters({
-                  ...p.filters,
-                  tggspOnly: Boolean(event.target.value),
-                  tggspCoverage: event.target
-                    .value as SearchFilters["tggspCoverage"],
-                })
-              }
-            >
-              <option value="">Any</option>
-              <option value="any">Any TGGSP material</option>
-              <option value="translation">Translation</option>
-              <option value="word-analysis">Etymology</option>
-              <option value="extended">
-                Commentary, transcreation or poetical dimension
-              </option>
-            </select>
-          </label>
-          {p.filters.tggspCoverage === "extended" && (
-            <fieldset className="provider-filter">
-              <legend>Required TGGSP section</legend>
-              {providerFilterOptions.map((option) => (
-                <label key={option.id}>
-                  <input
-                    type="checkbox"
-                    checked={p.filters.providerContentTypes.includes(option.id)}
-                    onChange={() =>
-                      update(
-                        "providerContentTypes",
-                        toggleValue(p.filters.providerContentTypes, option.id),
-                      )
-                    }
-                  />
-                  {option.label}
-                </label>
-              ))}
-            </fieldset>
-          )}
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => {
-              p.setFilters(defaultSearchFilters);
-              p.setMode("auto");
-            }}
-          >
-            Clear filters
-          </button>
-        </div>
-      </details>
+      <FilterSheet
+        open={filterOpen}
+        title="Search Gurbani"
+        groups={searchFilterGroups(p.sources, p.raags, p.contributors)}
+        selected={searchFilterSelection(p.filters)}
+        onClose={() => setFilterOpen(false)}
+        onApply={(selected) => {
+          p.setFilters(applySearchSelection(p.filters, selected));
+          setFilterOpen(false);
+        }}
+        onSetDefault={(selected) => {
+          const next = applySearchSelection(p.filters, selected);
+          p.setFilterDefault(next);
+          p.setFilters(next);
+          setFilterOpen(false);
+        }}
+        onResetDefault={() => {
+          p.setFilters(p.filterDefault);
+          setFilterOpen(false);
+        }}
+      />
       {!p.query.trim() && p.history.length > 0 && (
         <section className="recent-searches">
           <h2>Recent searches</h2>
@@ -2328,6 +2640,17 @@ function SearchView(p: SearchViewProps) {
           {p.response.query === p.query.trim() ? "Matches" : "Live shortlist"}
         </h2>
         <SearchResults response={displayed} openSabad={p.openSabad} />
+        {p.query.trim() && (
+          <button
+            className="feedback-trigger"
+            onClick={() => setFeedbackKind("search")}
+          >
+            <Icon name="rate_review" />{" "}
+            {displayed.results.length
+              ? "Did you find what you meant?"
+              : "Tell us what you expected"}
+          </button>
+        )}
       </section>
       {p.showExperimental && themes.results.length > 0 && (
         <section className="theme-results">
@@ -2342,6 +2665,28 @@ function SearchView(p: SearchViewProps) {
             </small>
           </header>
           <SearchResults response={themes} openSabad={p.openSabad} />
+          <button
+            className="feedback-trigger secondary"
+            onClick={() => setFeedbackKind("theme")}
+          >
+            <Icon name="rate_review" /> Review these suggestions
+          </button>
+        </section>
+      )}
+      {p.showExperimental && p.query.trim() && !themes.results.length && (
+        <section className="panel theme-feedback-empty">
+          <span className="experimental-badge">Experimental</span>
+          <h2>Expected thematic suggestions?</h2>
+          <p>
+            Tell us what concept you meant and, if possible, select a Shabad
+            that should have appeared.
+          </p>
+          <button
+            className="feedback-trigger secondary"
+            onClick={() => setFeedbackKind("theme")}
+          >
+            <Icon name="rate_review" /> Report a missing theme result
+          </button>
         </section>
       )}
       {p.showExperimental && (
@@ -2349,8 +2694,37 @@ function SearchView(p: SearchViewProps) {
           personal={p.personal}
           setPersonal={p.setPersonal}
           openSabad={p.openSabad}
+          notify={p.notify}
         />
       )}
+      <FeedbackComposer
+        open={feedbackKind !== null}
+        context={{
+          kind:
+            feedbackKind === "theme"
+              ? "theme"
+              : p.voiceAlternatives.length
+                ? "voice-search"
+                : "written-search",
+          query: p.query,
+          voiceAlternatives:
+            feedbackKind === "theme" ? [] : p.voiceAlternatives,
+          filters: p.filters,
+          candidates:
+            feedbackKind === "theme" ? themes.results : displayed.results,
+        }}
+        onSave={(record) => {
+          p.setPersonal((current) => ({
+            ...current,
+            feedbackRecords: [
+              record,
+              ...(current.feedbackRecords ?? []),
+            ].slice(0, 250),
+          }));
+          p.notify("Feedback saved on this device.");
+        }}
+        onClose={() => setFeedbackKind(null)}
+      />
     </section>
   );
 }
@@ -2402,10 +2776,12 @@ function IdentifyKeertan({
   personal,
   setPersonal,
   openSabad,
+  notify,
 }: {
   personal: PersonalData;
   setPersonal: CommonReader["setPersonal"];
   openSabad: (id: string, lineId?: string | null) => Promise<void>;
+  notify: (message: string) => void;
 }) {
   const [source, setSource] = useState<"nearby-audio" | "same-device-speaker">(
     "nearby-audio",
@@ -2414,6 +2790,7 @@ function IdentifyKeertan({
   const [heard, setHeard] = useState<string[]>([]);
   const [results, setResults] = useState<CorpusSearchResponse["results"]>([]);
   const [error, setError] = useState("");
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const identify = async () => {
     setListening(true);
     setHeard([]);
@@ -2478,13 +2855,6 @@ function IdentifyKeertan({
       setListening(false);
     }
   };
-  const markLatest = (verdict: "correct" | "wrong" | "no-match") =>
-    setPersonal((current) => ({
-      ...current,
-      keertanTests: current.keertanTests.map((test, index) =>
-        index === 0 ? { ...test, verdict } : test,
-      ),
-    }));
   return (
     <details className="panel experimental-keertan">
       <summary>
@@ -2541,12 +2911,8 @@ function IdentifyKeertan({
       {heard.length > 0 && (
         <div className="keertan-feedback">
           <span>Was the correct Shabad shown?</span>
-          <button onClick={() => markLatest("correct")}>Yes</button>
-          <button className="secondary" onClick={() => markLatest("wrong")}>
-            No
-          </button>
-          <button className="secondary" onClick={() => markLatest("no-match")}>
-            No useful match
+          <button onClick={() => setFeedbackOpen(true)}>
+            Correct or review this result
           </button>
         </div>
       )}
@@ -2555,6 +2921,41 @@ function IdentifyKeertan({
         {personal.keertanTests.length === 1 ? "record" : "records"} will be
         included in a backup.
       </small>
+      <FeedbackComposer
+        open={feedbackOpen}
+        context={{
+          kind: "keertan",
+          query: heard[0] ?? "",
+          voiceAlternatives: heard,
+          audioSource: source,
+          filters: defaultSearchFilters,
+          candidates: results,
+        }}
+        onSave={(record) => {
+          setPersonal((current) => ({
+            ...current,
+            feedbackRecords: [
+              record,
+              ...(current.feedbackRecords ?? []),
+            ].slice(0, 250),
+            keertanTests: current.keertanTests.map((test, index) =>
+              index === 0
+                ? {
+                    ...test,
+                    verdict:
+                      record.verdict === "correct"
+                        ? "correct"
+                        : record.verdict === "no-match"
+                          ? "no-match"
+                          : "wrong",
+                  }
+                : test,
+            ),
+          }));
+          notify("Keertan feedback saved on this device.");
+        }}
+        onClose={() => setFeedbackOpen(false)}
+      />
     </details>
   );
 }
@@ -2593,13 +2994,12 @@ function WordView({
   const [forms, setForms] = useState([word]);
   useEffect(() => setForms([word]), [word]);
   const scope = [
-    filters.sourceWorkId === "all"
-      ? "All texts"
-      : sources.find((x) => x.id === filters.sourceWorkId)?.title,
-    filters.raag && `Raag ${filters.raag}`,
-    filters.contributorId &&
-      contributors.find((x) => x.id === filters.contributorId)?.name,
-    filters.tggspOnly && "TGGSP available",
+    ...(filters.sourceWorkIds.length
+      ? filters.sourceWorkIds.map((id) => sources.find((x) => x.id === id)?.title)
+      : ["All texts"]),
+    ...filters.raags.map((value) => `Raag ${value}`),
+    ...filters.contributorIds.map((id) => contributors.find((x) => x.id === id)?.name),
+    ...filters.tggspCoverages.map((value) => `TGGSP ${value}`),
   ].filter(Boolean);
   return (
     <section>
@@ -3108,6 +3508,8 @@ function Settings({
   openWord,
   restoreSearch,
   openSources,
+  openHelp,
+  openFeedback,
   exportData,
   importData,
 }: {
@@ -3117,6 +3519,8 @@ function Settings({
   openWord: (word: string) => Promise<void>;
   restoreSearch: (row: SavedSearch) => Promise<void>;
   openSources: () => void;
+  openHelp: () => void;
+  openFeedback: () => void;
   exportData: () => Promise<void>;
   importData: (file: File) => Promise<void>;
 }) {
@@ -3126,6 +3530,19 @@ function Settings({
         Appearance, help, experimental features and local backup.
       </PageHeading>
       <div className="settings-stack">
+        <section className="panel">
+          <h2>Beta feedback</h2>
+          <p>
+            Review saved search, voice, Keertan and experimental-theme
+            corrections. Feedback stays on this device until you share it.
+          </p>
+          <button onClick={openFeedback}>
+            Open feedback
+            {personal.feedbackRecords?.length
+              ? ` (${personal.feedbackRecords.length})`
+              : ""}
+          </button>
+        </section>
         <section className="panel">
           <h2>Colour accent</h2>
           <div className="accent-choices">
@@ -3171,7 +3588,9 @@ function Settings({
             Learn the search controls, Study view, personal reflections, and
             what BaniDB and TGGSP provide.
           </p>
+          <button onClick={openHelp}>Open Help &amp; Guide</button>
           <button
+            className="secondary"
             onClick={() =>
               setPreferences((current) => ({
                 ...current,
@@ -3343,7 +3762,7 @@ function LineSheet({
     notify("Added to collection.");
   };
   const copyReference = async () => {
-    const ref = `${line.gurmukhi}\n${line.contributorName ?? "Contributor"} · Ang ${line.ang}\nGurbani Reader reference: ${line.sourceWorkId} / ${line.textUnitId} / ${line.id}`;
+    const ref = `${line.gurmukhi}\n${line.contributorName ?? "Contributor"} · Ang ${line.ang}\nShabad Sojhi reference: ${line.sourceWorkId} / ${line.textUnitId} / ${line.id}`;
     await copyText(ref);
     notify("Reference copied.");
   };
@@ -3432,32 +3851,52 @@ function LineSheet({
 function Onboarding({
   complete,
   openSources,
+  start,
 }: {
   complete: () => void;
   openSources: () => void;
+  start: (goal: "search" | "read" | "study") => void;
 }) {
   const [step, setStep] = useState(0);
   const pages = [
     {
-      icon: "search",
-      title: "Find Gurbani",
-      body: "Type a phrase, use the microphone, or tap ਕ to open the Gurmukhi keyboard. Roman spellings and every voice alternative are searched together.",
+      icon: "explore",
+      title: "Welcome to Shabad Sojhi",
+      body: "Read Gurbani, identify a Shabad from words or voice, and explore translations without losing sight of the original text.",
       controls: (
         <div className="guide-controls">
           <span>
-            <Icon name="mic" /> voice
+            <Icon name="search" /> Find
+          </span>
+          <span>
+            <Icon name="menu_book" /> Read
+          </span>
+          <span>
+            <Icon name="school" /> Understand
+          </span>
+        </div>
+      ),
+    },
+    {
+      icon: "search",
+      title: "Find a Shabad in the way you remember it",
+      body: "Speak or type a Gurmukhi, Roman or English phrase. Tap ਕ for the built-in Gurmukhi keyboard. Filters can combine texts, Raags, contributors and result types.",
+      controls: (
+        <div className="guide-controls">
+          <span>
+            <Icon name="mic" /> speak
           </span>
           <span className="gurmukhi">ਕ</span>
           <span>
-            <Icon name="search" /> search
+            <Icon name="filter_list" /> combine filters
           </span>
         </div>
       ),
     },
     {
       icon: "menu_book",
-      title: "Read or study",
-      body: "Read keeps the Gurbani flowing. Study reveals line actions: bookmarks, private reflections, collections and exact-word exploration.",
+      title: "Read simply—or open Study tools",
+      body: "Read view keeps the text flowing. Study view lets you tap a line to bookmark it, write a private reflection, add it to a collection or explore an exact word. Saved Banis and everything personal live in Library.",
       controls: (
         <div className="guide-controls">
           <span>
@@ -3466,23 +3905,17 @@ function Onboarding({
           <span>
             <Icon name="edit_note" /> Study
           </span>
+          <span>
+            <Icon name="library_books" /> Library
+          </span>
         </div>
       ),
     },
     {
-      icon: "library_books",
-      title: "Find everything you save",
-      body: "Star Banis to put them in Saved Banis. Bookmarks, reflections, collections and history all live in Library. Settings is the gear at the top.",
-      controls: (
-        <div className="guide-controls">
-          <span>
-            <Icon name="star" /> Saved Banis
-          </span>
-          <span>
-            <Icon name="settings" /> Settings
-          </span>
-        </div>
-      ),
+      icon: "touch_app",
+      title: "Start with a real task",
+      body: "Choose what you want to do first. The full, searchable guide remains under Settings → Help & Guide.",
+      controls: null,
     },
   ];
   const page = pages[step];
@@ -3491,7 +3924,7 @@ function Onboarding({
       className="onboarding-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="Welcome to Gurbani Reader"
+      aria-label="Welcome to Shabad Sojhi"
     >
       <section className="onboarding-card">
         <Icon name={page.icon} />
@@ -3501,6 +3934,13 @@ function Onboarding({
         <h1>{page.title}</h1>
         <p>{page.body}</p>
         {page.controls}
+        {step === pages.length - 1 && (
+          <div className="onboarding-goals">
+            <button onClick={() => start("search")}><Icon name="search" /> Find a Shabad</button>
+            <button onClick={() => start("read")}><Icon name="menu_book" /> Choose a Bani</button>
+            <button onClick={() => start("study")}><Icon name="school" /> Explore Study view</button>
+          </div>
+        )}
         <div className="onboarding-actions">
           {step > 0 && (
             <button
@@ -3510,15 +3950,9 @@ function Onboarding({
               Back
             </button>
           )}
-          <button
-            onClick={() =>
-              step < pages.length - 1
-                ? setStep((value) => value + 1)
-                : complete()
-            }
-          >
-            {step < pages.length - 1 ? "Next" : "Start reading"}
-          </button>
+          {step < pages.length - 1 && (
+            <button onClick={() => setStep((value) => value + 1)}>Next</button>
+          )}
         </div>
         <button className="source-guide-link" onClick={openSources}>
           About BaniDB and TGGSP
@@ -3528,6 +3962,110 @@ function Onboarding({
         </button>
       </section>
     </div>
+  );
+}
+
+const helpTopics = [
+  {
+    section: "Quick start",
+    title: "Find something you remember",
+    icon: "search",
+    body: "Open Search. Type a Gurmukhi, Roman or English phrase, tap the microphone to speak it, or tap ਕ for the built-in Gurmukhi keyboard. Suggestions update as you type; open a result to see the complete Shabad at the matched line.",
+  },
+  {
+    section: "Find Gurbani",
+    title: "Search by voice, spelling or first letters",
+    icon: "mic",
+    body: "Voice and Roman spelling are tolerant rather than literal. The app also recognises Gurmukhi words and first-letter sequences. Use Filters to combine several texts, Raags, contributors, TGGSP coverage and result types. Choices remain in place until you clear or reset them.",
+  },
+  {
+    section: "Find Gurbani",
+    title: "Identify nearby Keertan (experimental)",
+    icon: "graphic_eq",
+    body: "In Search, open Identify Keertan. Let the microphone hear a sung phrase, then review the transcript and ranked Shabad candidates. Results are suggestions because singing, accompaniment and background audio can reduce recognition accuracy.",
+  },
+  {
+    section: "Read Gurbani",
+    title: "Open a Bani, Ang, Raag or contributor",
+    icon: "menu_book",
+    body: "Read contains All Banis, the Ang picker, Raags, contributors and the full word index. Star any Bani to add it to Saved Banis. Filters are multi-select: choices within a group are combined, while different groups narrow one another.",
+  },
+  {
+    section: "Understand Gurbani",
+    title: "Use Read and Study views",
+    icon: "school",
+    body: "Read view removes line actions for uninterrupted reading. Study view reveals line actions and layers. Aa changes the Gurmukhi and English sizes, weight and colours; Layers controls transliteration, translation, etymology and other available TGGSP material.",
+  },
+  {
+    section: "Understand Gurbani",
+    title: "Recognise BaniDB and TGGSP content",
+    icon: "layers",
+    body: "The rail beside each layer identifies its source without repeating a provider label on every line. TGGSP is used where mapped; BaniDB supplies the broader installed text, transliteration and baseline translation. Some TGGSP translations apply to a whole passage and therefore remain after that passage.",
+  },
+  {
+    section: "Save and reflect",
+    title: "Save a Bani, bookmark or private reflection",
+    icon: "bookmark",
+    body: "A star saves a whole Bani. In Study view, tap a line to bookmark it, write a reflection, add it to a collection or copy a direct reference. Library holds Saved Banis, bookmarks, reflections, collections and history. All personal material stays on this device unless you export it.",
+  },
+  {
+    section: "Personalise",
+    title: "Change appearance and keep filter defaults",
+    icon: "palette",
+    body: "Use the Settings gear for themes, accent colours and experimental features. In any filter panel, Set as default stores that view’s configuration; Reset to default restores it and Clear all removes the active selections.",
+  },
+  {
+    section: "Troubleshooting",
+    title: "When search or voice does not find the expected Shabad",
+    icon: "help",
+    body: "Check the ‘Heard’ transcript, try a shorter phrase, and clear restrictive filters. Use ‘Tell us what you expected’ to correct the wording and select the intended Shabad. Punjabi voice recognition may depend on the device language service and network. Typed search and the installed reading data remain available offline.",
+  },
+  {
+    section: "Beta feedback",
+    title: "Correct a result and share feedback",
+    icon: "rate_review",
+    body: "Search, voice, Identify Keertan and experimental theme results each have a contextual correction action. Choose the intended Shabad or find it manually, then review records under Settings → Feedback. Records stay on this device and are exported separately from bookmarks and reflections. They are reviewed before changing search.",
+  },
+];
+
+function HelpGuide({
+  openSources,
+  replay,
+}: {
+  openSources: () => void;
+  replay: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const folded = fold(query);
+  const topics = helpTopics.filter((topic) =>
+    fold(`${topic.section} ${topic.title} ${topic.body}`).includes(folded),
+  );
+  return (
+    <section>
+      <PageHeading eyebrow="Help" title="Help & Guide">
+        Find a task, learn the controls, or replay the short first-use guide.
+      </PageHeading>
+      <label className="guide-search">
+        <Icon name="search" />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search the guide" />
+      </label>
+      <div className="guide-actions">
+        <button onClick={replay}><Icon name="replay" /> Replay welcome guide</button>
+        <button className="secondary" onClick={openSources}><Icon name="info" /> Texts and translations</button>
+      </div>
+      <div className="help-topics">
+        {topics.map((topic, index) => (
+          <details key={`${topic.section}:${topic.title}`} open={!query && index < 2}>
+            <summary>
+              <Icon name={topic.icon} />
+              <span><small>{topic.section}</small><b>{topic.title}</b></span>
+            </summary>
+            <p>{topic.body}</p>
+          </details>
+        ))}
+        {!topics.length && <p className="empty">No guide topic matches that phrase.</p>}
+      </div>
+    </section>
   );
 }
 
@@ -3823,12 +4361,55 @@ function dailyPeriod(token: string) {
       ? "Night prayer"
       : "Morning prayer";
 }
-function contributorGroup(type: string) {
+function contributorGroup(type: string): BrowseFilterState["contributorTypes"][number] {
   const value = fold(type);
   if (value.includes("guru")) return "guru";
   if (value.includes("bhagat")) return "bhagat";
   if (value.includes("bhatt")) return "bhatt";
   return "other";
+}
+
+function storedStringList(key: string): string[] {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(key) ?? "[]");
+    return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function CoachTip({
+  id,
+  title: tipTitle,
+  preferences,
+  setPreferences,
+  children,
+}: {
+  id: string;
+  title: string;
+  preferences: ReaderPreferences;
+  setPreferences: CommonReader["setPreferences"];
+  children: ReactNode;
+}) {
+  if (preferences.seenGuideTips?.includes(id)) return null;
+  return (
+    <aside className="coach-tip" role="note">
+      <Icon name="lightbulb" />
+      <div><strong>{tipTitle}</strong><p>{children}</p></div>
+      <button
+        className="icon-button"
+        aria-label="Dismiss tip"
+        onClick={() =>
+          setPreferences((current) => ({
+            ...current,
+            seenGuideTips: [...new Set([...(current.seenGuideTips ?? []), id])],
+          }))
+        }
+      >
+        <Icon name="close" />
+      </button>
+    </aside>
+  );
 }
 function contributorSource(id: string, current: string) {
   if (id === "contributor:combined:bhai-gurdas") return "source:B";

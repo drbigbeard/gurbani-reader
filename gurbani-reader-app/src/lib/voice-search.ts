@@ -8,14 +8,14 @@ interface VoiceSearchPlugin {
 const NativeVoiceSearch = registerPlugin<VoiceSearchPlugin>('VoiceSearch');
 
 export async function voiceSearchAvailable(): Promise<boolean> {
-  if (Capacitor.getPlatform() === 'android') {
+  if (Capacitor.isNativePlatform()) {
     try { return (await NativeVoiceSearch.available()).available; } catch { return false; }
   }
   return Boolean(webRecognizer());
 }
 
 export async function listenForSearch(language: 'pa-IN' | 'en-GB'): Promise<string[]> {
-  if (Capacitor.getPlatform() === 'android') return (await NativeVoiceSearch.listen({ language })).matches;
+  if (Capacitor.isNativePlatform()) return (await NativeVoiceSearch.listen({ language })).matches;
   const Recognition = webRecognizer();
   if (!Recognition) throw new Error('Voice search is not available on this device.');
   return new Promise((resolve, reject) => {

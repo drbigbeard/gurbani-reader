@@ -5,6 +5,14 @@ const oldBackup = JSON.stringify({ format:'gurbani-reader-backup', version:1, ex
 const restored = parseBackup(oldBackup);
 if (restored.personal.myBaniIds[0] !== 'bani:test' || restored.personal.bookmarks[0] !== 'line:test') throw new Error('v1 backup did not preserve Saved Banis and bookmarks');
 console.log('PASS  v1 My Banis data migrates intact to the Saved Banis interface');
+const rc2Backup = JSON.stringify({
+  format:'gurbani-reader-backup', version:2, exportedAt:'2026-07-20T00:00:00.000Z',
+  personal:{ myBaniIds:[], bookmarks:[] },
+  preferences:{ filterViews:{ search:{ current:{ sourceWorkIds:['source:G'], raags:['Raag Aasaa'] }, defaultValue:{ sourceWorkIds:['source:G'], raags:[] } } } },
+});
+const rc2Restored = parseBackup(rc2Backup);
+if (rc2Restored.preferences.filterViews.search.current.raags[0] !== 'Raag Aasaa') throw new Error('RC2 filter configuration did not survive backup parsing');
+console.log('PASS  RC2 current and default filter configurations survive backup round-trip parsing');
 let rejected = false;
 try { parseBackup('{"format":"something-else"}'); } catch { rejected = true; }
 if (!rejected) throw new Error('invalid backup was accepted');

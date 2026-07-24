@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'Gurbani Reader & Corpus Explorer',
-        short_name: 'Gurbani',
-        description: 'Gurmukhi-first personal reader and corpus explorer',
+        name: 'Shabad Sojhi',
+        short_name: 'Sojhi',
+        description: 'Read, find and understand Gurbani',
         theme_color: '#f5f0e5',
         background_color: '#f5f0e5',
         display: 'standalone',

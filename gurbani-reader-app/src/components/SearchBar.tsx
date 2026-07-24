@@ -118,7 +118,15 @@ export function SearchBar({
         <div className="voice-alternatives">
           <small>Heard — every alternative was searched:</small>
           {alternatives.map((option) => (
-            <button key={option} onClick={() => void onVoice([option])}>
+            <button
+              key={option}
+              onClick={() =>
+                void onVoice([
+                  option,
+                  ...alternatives.filter((candidate) => candidate !== option),
+                ])
+              }
+            >
               {option}
             </button>
           ))}

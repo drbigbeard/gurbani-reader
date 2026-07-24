@@ -238,7 +238,9 @@ html[data-theme="black"] .tggsp-badge {
 }
 @media (max-width: 760px) {
   main {
-    padding-top: 4px;
+    padding-top: calc(4px + env(safe-area-inset-top));
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
   }
   .mobile-app-bar {
     display: flex;
@@ -309,6 +311,11 @@ html[data-theme="black"] .tggsp-badge {
   }
   .mobile-nav button {
     min-width: 48px;
+  }
+  .screen-read main,
+  .screen-sabad main,
+  .screen-bani main {
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
   }
 }
 @media (max-width: 390px) {

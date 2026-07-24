@@ -9,6 +9,10 @@ import {
   resolveTggspTheme,
   TGGSP_THEME_INDEX_VERSION,
 } from "../data/tggsp-themes-v1";
+import {
+  defaultSearchFilters as emptySearchFilters,
+  normalizeSearchFilters,
+} from "./filters";
 import type {
   BaniSummary,
   BaniView,
@@ -273,9 +277,10 @@ export class MobileCorpusGateway {
     mode: SearchMode = "auto",
   ): Promise<CorpusSearchResponse> {
     const db = await this.db();
+    filters = normalizeSearchFilters(filters);
     const trimmed = query.trim();
     if (!trimmed)
-      return filters.tggspOnly
+      return filters.tggspCoverages.length || filters.providerContentTypes.length
         ? this.tggspAvailableSearch(filters, limit)
         : { query: "", mode: "latin", results: [], candidateForms: [] };
     const isGurmukhi = containsGurmukhi(trimmed);
@@ -550,6 +555,10 @@ export class MobileCorpusGateway {
       ...baniDbResults,
       ...translationResults,
     ].filter((row) => !seenUnits.has(String(row.textUnitId)));
+    const mergedResults = [...sabadResults, ...allAnalysis].filter(
+      (row) =>
+        !filters.resultTypes.length || filters.resultTypes.includes(row.resultType),
+    );
     return {
       query: trimmed,
       mode: isGurmukhi
@@ -557,7 +566,7 @@ export class MobileCorpusGateway {
         : allAnalysis.length > sabadResults.length
           ? "english"
           : "latin",
-      results: [...sabadResults, ...allAnalysis].slice(0, limit),
+      results: mergedResults.slice(0, limit),
       candidateForms: [...candidateMap.values()].slice(0, 12),
     };
   }
@@ -808,9 +817,20 @@ export class MobileCorpusGateway {
     sourceWorkId = "source:G",
     limit = 50,
     offset = 0,
-    contributorId?: string,
+    contributorIds?: string | string[],
   ): Promise<TextUnitSummary[]> {
     const db = await this.db();
+    const selected = (Array.isArray(contributorIds)
+      ? contributorIds
+      : contributorIds
+        ? [contributorIds]
+        : []
+    ).flatMap((id) =>
+      id === COMBINED_BHAI_GURDAS_ID ? BHAI_GURDAS_CONTRIBUTORS : [id],
+    );
+    const contributorClause = selected.length
+      ? `AND l.contributor_id IN (${selected.map(() => "?").join(",")})`
+      : "";
     const result = await db.query(
       `SELECT u.id, u.source_work_id AS sourceWorkId,
         COALESCE(u.title, 'Shabad') AS title, COALESCE(MIN(l.contributor_id), '') AS contributorId,
@@ -821,11 +841,9 @@ export class MobileCorpusGateway {
         COALESCE((SELECT x.transliteration FROM canonical_line x WHERE x.text_unit_id = u.id ORDER BY x.ang, x.line_order LIMIT 1), '') AS transliteration
       FROM text_unit u JOIN canonical_line l ON l.text_unit_id = u.id
       LEFT JOIN contributor c ON c.id = l.contributor_id
-      WHERE u.source_work_id = ? AND l.raag = ? ${contributorId ? "AND l.contributor_id = ?" : ""}
+      WHERE u.source_work_id = ? AND l.raag = ? ${contributorClause}
       GROUP BY u.id ORDER BY firstAng, u.unit_order LIMIT ? OFFSET ?`,
-      contributorId
-        ? [sourceWorkId, raag, contributorId, limit, offset]
-        : [sourceWorkId, raag, limit, offset],
+      [sourceWorkId, raag, ...selected, limit, offset],
     );
     return (result.values ?? []).map(textUnitSummary);
   }
@@ -1231,17 +1249,23 @@ export class MobileCorpusGateway {
 
   async rankedFormsPage(
     sourceWorkId = "source:G",
-    letter = "",
+    letters: string | string[] = "",
     limit = 100,
     offset = 0,
+    sort: "count" | "name" = "count",
   ): Promise<FrequencyPage> {
     const db = await this.db();
-    const clause = letter ? "AND exact_form LIKE ?" : "";
+    const selectedLetters = (Array.isArray(letters) ? letters : [letters]).filter(Boolean);
+    const clause = selectedLetters.length
+      ? `AND (${selectedLetters.map(() => "exact_form LIKE ?").join(" OR ")})`
+      : "";
     const base = [
       sourceWorkId,
       sourceWorkId,
-      ...(letter ? [`${letter}%`] : []),
+      ...selectedLetters.map((letter) => `${letter}%`),
     ];
+    const ordering =
+      sort === "name" ? "exact_form, frequency DESC" : "frequency DESC, exact_form";
     const [count, rows] = await Promise.all([
       db.query(
         `SELECT COUNT(*) AS total FROM (SELECT exact_form FROM token_occurrence
@@ -1251,7 +1275,7 @@ export class MobileCorpusGateway {
       db.query(
         `SELECT exact_form AS form, COUNT(*) AS frequency, COUNT(DISTINCT line_id) AS distinctLines
         FROM token_occurrence WHERE (? = 'all' OR source_work_id = ?) AND token_class = 'lexical_gurmukhi' ${clause}
-        GROUP BY exact_form ORDER BY frequency DESC, exact_form LIMIT ? OFFSET ?`,
+        GROUP BY exact_form ORDER BY ${ordering} LIMIT ? OFFSET ?`,
         [...base, limit, offset],
       ),
     ]);
@@ -1850,14 +1874,7 @@ function containsEnglishTerm(content: string, term: string): boolean {
 }
 
 function defaultSearchFilters(): SearchFilters {
-  return {
-    sourceWorkId: "all",
-    raag: "",
-    contributorId: "",
-    tggspOnly: false,
-    tggspCoverage: "",
-    providerContentTypes: [],
-  };
+  return { ...emptySearchFilters };
 }
 
 function searchFacetSql(
@@ -1865,50 +1882,51 @@ function searchFacetSql(
   lineAlias: string,
   includeTggsp = true,
 ): { clause: string; params: unknown[] } {
+  filters = normalizeSearchFilters(filters);
   const clauses: string[] = [];
   const params: unknown[] = [];
-  if (filters.sourceWorkId !== "all") {
-    clauses.push(`${lineAlias}.source_work_id = ?`);
-    params.push(filters.sourceWorkId);
-  }
-  if (filters.raag) {
-    clauses.push(`${lineAlias}.raag = ?`);
-    params.push(filters.raag);
-  }
-  if (filters.contributorId === COMBINED_BHAI_GURDAS_ID) {
+  if (filters.sourceWorkIds.length) {
     clauses.push(
-      `${lineAlias}.contributor_id IN (${BHAI_GURDAS_CONTRIBUTORS.map(() => "?").join(",")})`,
+      `${lineAlias}.source_work_id IN (${filters.sourceWorkIds.map(() => "?").join(",")})`,
     );
-    params.push(...BHAI_GURDAS_CONTRIBUTORS);
-  } else if (filters.contributorId) {
-    clauses.push(`${lineAlias}.contributor_id = ?`);
-    params.push(filters.contributorId);
+    params.push(...filters.sourceWorkIds);
+  }
+  if (filters.raags.length) {
+    clauses.push(`${lineAlias}.raag IN (${filters.raags.map(() => "?").join(",")})`);
+    params.push(...filters.raags);
+  }
+  if (filters.contributorIds.length) {
+    const contributorIds = filters.contributorIds.flatMap((id) =>
+      id === COMBINED_BHAI_GURDAS_ID ? BHAI_GURDAS_CONTRIBUTORS : [id],
+    );
+    clauses.push(
+      `${lineAlias}.contributor_id IN (${contributorIds.map(() => "?").join(",")})`,
+    );
+    params.push(...contributorIds);
   }
   if (
     includeTggsp &&
-    (filters.tggspOnly ||
-      filters.tggspCoverage ||
+    (filters.tggspCoverages.length ||
       filters.providerContentTypes.length)
   ) {
     const types = filters.providerContentTypes;
-    const coverage = filters.tggspCoverage || "any";
-    if (coverage === "translation")
+    const coverageClauses = filters.tggspCoverages.map((coverage) => {
+      if (coverage === "translation")
+        return `EXISTS (SELECT 1 FROM tggsp_line_member facet_tm JOIN tggsp_line_alignment facet_ta ON facet_ta.id=facet_tm.alignment_id WHERE facet_tm.canonical_line_id=${lineAlias}.id AND (facet_ta.literal_translation_en<>'' OR facet_ta.literal_translation_pa<>''))`;
+      if (coverage === "word-analysis")
+        return `EXISTS (SELECT 1 FROM tggsp_line_term facet_tt WHERE facet_tt.canonical_line_id=${lineAlias}.id)`;
+      if (coverage === "extended")
+        return `EXISTS (SELECT 1 FROM provider_content facet_pc WHERE facet_pc.text_unit_id = ${lineAlias}.text_unit_id)`;
+      return `(EXISTS (SELECT 1 FROM tggsp_line_member facet_tm WHERE facet_tm.canonical_line_id=${lineAlias}.id) OR EXISTS (SELECT 1 FROM tggsp_line_term facet_tt WHERE facet_tt.canonical_line_id=${lineAlias}.id) OR EXISTS (SELECT 1 FROM provider_content facet_pc WHERE facet_pc.text_unit_id=${lineAlias}.text_unit_id))`;
+    });
+    if (coverageClauses.length)
+      clauses.push(`(${coverageClauses.join(" OR ")})`);
+    if (types.length) {
       clauses.push(
-        `EXISTS (SELECT 1 FROM tggsp_line_member facet_tm JOIN tggsp_line_alignment facet_ta ON facet_ta.id=facet_tm.alignment_id WHERE facet_tm.canonical_line_id=${lineAlias}.id AND (facet_ta.literal_translation_en<>'' OR facet_ta.literal_translation_pa<>''))`,
-      );
-    else if (coverage === "word-analysis")
-      clauses.push(
-        `EXISTS (SELECT 1 FROM tggsp_line_term facet_tt WHERE facet_tt.canonical_line_id=${lineAlias}.id)`,
-      );
-    else if (coverage === "extended" || types.length) {
-      clauses.push(
-        `EXISTS (SELECT 1 FROM provider_content facet_pc WHERE facet_pc.text_unit_id = ${lineAlias}.text_unit_id${types.length ? ` AND facet_pc.content_type IN (${types.map(() => "?").join(",")})` : ""})`,
+        `EXISTS (SELECT 1 FROM provider_content facet_pc_type WHERE facet_pc_type.text_unit_id = ${lineAlias}.text_unit_id AND facet_pc_type.content_type IN (${types.map(() => "?").join(",")}))`,
       );
       params.push(...types);
-    } else
-      clauses.push(
-        `(EXISTS (SELECT 1 FROM tggsp_line_member facet_tm WHERE facet_tm.canonical_line_id=${lineAlias}.id) OR EXISTS (SELECT 1 FROM tggsp_line_term facet_tt WHERE facet_tt.canonical_line_id=${lineAlias}.id) OR EXISTS (SELECT 1 FROM provider_content facet_pc WHERE facet_pc.text_unit_id=${lineAlias}.text_unit_id))`,
-      );
+    }
   }
   return {
     clause: clauses.length ? `AND ${clauses.join(" AND ")}` : "",

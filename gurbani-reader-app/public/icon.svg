@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
-  <title id="title">Gurbani Reader prototype icon</title>
-  <rect width="512" height="512" rx="112" fill="#2d6152"/>
-  <circle cx="256" cy="256" r="174" fill="#f5f0e5"/>
-  <text x="256" y="310" text-anchor="middle" font-size="210" font-family="Noto Sans Gurmukhi, Raavi, sans-serif" fill="#2d6152">ੴ</text>
+  <title id="title">Shabad Sojhi icon</title>
+  <rect width="512" height="512" rx="112" fill="#F5EFE3"/>
+  <path d="M112 202V112h90M310 112h90v90M400 310v90h-90M202 400h-90v-90" fill="none" stroke="#38478B" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="256" y="324" text-anchor="middle" font-size="220" font-weight="700" font-family="Noto Sans Gurmukhi, Raavi, sans-serif" fill="#222B49">ਸ</text>
 </svg>
