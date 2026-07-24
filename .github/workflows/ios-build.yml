@@ -46,13 +46,12 @@ jobs:
             -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$RUNNER_TEMP/GurbaniReaderDerivedData" \
+            -derivedDataPath "$RUNNER_TEMP/ShabadSojhiDerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             build
       - name: Upload compiled simulator build for inspection
         uses: actions/upload-artifact@v4
         with:
-          name: Gurbani-Reader-v0.16.0-rc1-iOS-Simulator
-          path: ${{ runner.temp }}/GurbaniReaderDerivedData/Build/Products/Debug-iphonesimulator/App.app
+          name: Shabad-Sojhi-v0.16.0-rc3-iOS-Simulator
+          path: ${{ runner.temp }}/ShabadSojhiDerivedData/Build/Products/Debug-iphonesimulator/App.app
           if-no-files-found: error
-
