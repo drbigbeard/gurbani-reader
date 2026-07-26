@@ -3,12 +3,12 @@ import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
 const root = new URL('../', import.meta.url);
-const db = new DatabaseSync(new URL('public/assets/databases/gurbani_reader_v9SQLite.db', root).pathname, { readOnly: true });
+const db = new DatabaseSync(new URL('public/assets/databases/gurbani_reader_v10SQLite.db', root).pathname, { readOnly: true });
 const assert = (condition, message) => { if (!condition) throw new Error(message); console.log(`PASS  ${message}`); };
 const scalar = (sql, ...params) => { const row = db.prepare(sql).get(...params); return row?.value ?? row?.count ?? 0; };
 
-assert(db.prepare('PRAGMA integrity_check').get()?.integrity_check === 'ok', 'v9 reading database passes SQLite integrity check');
-assert(String(scalar("SELECT value FROM metadata WHERE key='schema_release'")) === 'v9', 'current search and alignment schema is installed');
+assert(db.prepare('PRAGMA integrity_check').get()?.integrity_check === 'ok', 'v10 reading database passes SQLite integrity check');
+assert(String(scalar("SELECT value FROM metadata WHERE key='schema_release'")) === 'v10', 'current search and alignment schema is installed');
 assert(String(scalar("SELECT value FROM metadata WHERE key='reading_profile'")) === 'SGPC', 'the single installed reading profile is SGPC');
 assert(Number(scalar('SELECT COUNT(*) AS count FROM line_search_fts')) === Number(scalar('SELECT COUNT(*) AS count FROM canonical_line')), 'every installed line is indexed for tolerant search');
 assert(Number(scalar('SELECT COUNT(*) AS count FROM stable_line_reference')) === Number(scalar('SELECT COUNT(*) AS count FROM canonical_line')), 'every line has a portable personal-data reference');

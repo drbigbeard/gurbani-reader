@@ -21,6 +21,8 @@ jobs:
       IOS_BUNDLE_ID: com.drbigbeard.shabadsojhi
       ARCHIVE_PATH: /tmp/ShabadSojhi.xcarchive
       EXPORT_PATH: /tmp/ShabadSojhiExport
+      VITE_ENHANCED_SPEECH_URL: ${{ secrets.ENHANCED_SPEECH_URL }}
+      VITE_ENHANCED_SPEECH_TOKEN: ${{ secrets.ENHANCED_SPEECH_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -46,6 +48,8 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+          ENHANCED_SPEECH_URL: ${{ secrets.ENHANCED_SPEECH_URL }}
+          ENHANCED_SPEECH_TOKEN: ${{ secrets.ENHANCED_SPEECH_TOKEN }}
         run: |
           for name in \
             APPLE_DISTRIBUTION_CERTIFICATE_BASE64 \
@@ -53,7 +57,9 @@ jobs:
             APPLE_PROVISIONING_PROFILE_BASE64 \
             APP_STORE_CONNECT_KEY_ID \
             APP_STORE_CONNECT_ISSUER_ID \
-            APP_STORE_CONNECT_PRIVATE_KEY_BASE64
+            APP_STORE_CONNECT_PRIVATE_KEY_BASE64 \
+            ENHANCED_SPEECH_URL \
+            ENHANCED_SPEECH_TOKEN
           do
             test -n "${!name}" || {
               echo "::error::Missing GitHub environment secret: ${name}"
@@ -75,6 +81,7 @@ jobs:
           npm run data:upgrade-v7 -- public/assets/databases/gurbani_reader_v6SQLite.db public/assets/databases/gurbani_reader_v7SQLite.db
           npm run data:upgrade-v8 -- public/assets/databases/gurbani_reader_v7SQLite.db public/assets/databases/gurbani_reader_v8SQLite.db
           npm run data:upgrade-v9 -- public/assets/databases/gurbani_reader_v8SQLite.db public/assets/databases/gurbani_reader_v9SQLite.db
+          npm run data:upgrade-v10 -- public/assets/databases/gurbani_reader_v9SQLite.db public/assets/databases/gurbani_reader_v10SQLite.db
       - run: npm run audit:rc
       - run: npm run ios:prepare
       - run: npm run ios:audit

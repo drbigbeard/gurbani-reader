@@ -39,7 +39,7 @@ assert(
 );
 assert(!info.includes('<string>armv7</string>'), 'Legacy armv7 capability must not be required.');
 assert(project.includes('IPHONEOS_DEPLOYMENT_TARGET = 15.0;'), 'iOS 15 deployment target changed unexpectedly.');
-assert(project.includes('CURRENT_PROJECT_VERSION = 23;'), 'RC4 must use TestFlight build 23.');
+assert(project.includes('CURRENT_PROJECT_VERSION = 24;'), 'RC5 must use TestFlight build 24.');
 assert(project.includes('TARGETED_DEVICE_FAMILY = "1,2";'), 'Universal iPhone/iPad device family setting is missing.');
 assert(
   project.match(/PRODUCT_BUNDLE_IDENTIFIER = com\.drbigbeard\.shabadsojhi;/g)?.length === 2,
@@ -49,10 +49,10 @@ assert(html.includes('viewport-fit=cover'), 'Edge-to-edge iPhone safe-area viewp
 assert(css.includes('env(safe-area-inset-top)'), 'Top safe-area handling is missing.');
 assert(css.includes('env(safe-area-inset-bottom)'), 'Bottom safe-area handling is missing.');
 
-const sourceDatabase = resolve(root, 'public/assets/databases/gurbani_reader_v9SQLite.db');
-const bundledDatabase = resolve(root, 'ios/App/App/public/assets/databases/gurbani_reader_v9SQLite.db');
-assert(existsSync(sourceDatabase), 'Prepared v9 SQLite database is missing.');
-assert(existsSync(bundledDatabase), 'The v9 SQLite database was not copied into the iOS bundle. Run npm run ios:prepare.');
+const sourceDatabase = resolve(root, 'public/assets/databases/gurbani_reader_v10SQLite.db');
+const bundledDatabase = resolve(root, 'ios/App/App/public/assets/databases/gurbani_reader_v10SQLite.db');
+assert(existsSync(sourceDatabase), 'Prepared v10 SQLite database is missing.');
+assert(existsSync(bundledDatabase), 'The v10 SQLite database was not copied into the iOS bundle. Run npm run ios:prepare.');
 assert(statSync(sourceDatabase).size === statSync(bundledDatabase).size, 'Bundled iOS database does not match the prepared source database.');
 assert(readFileSync(bundledDatabase).subarray(0, 16).toString() === 'SQLite format 3\u0000', 'Bundled iOS database is not a valid SQLite file.');
 
@@ -60,7 +60,7 @@ console.log(JSON.stringify({
   status: 'pass',
   platform: 'ios',
   version: '0.16.0',
-  build: '23',
+  build: '24',
   bundleIdentifier: 'com.drbigbeard.shabadsojhi',
   deploymentTarget: '15.0',
   packagedDatabaseBytes: statSync(bundledDatabase).size,

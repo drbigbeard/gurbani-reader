@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 
 const root = new URL('../', import.meta.url);
-const db = new DatabaseSync(new URL('public/assets/databases/gurbani_reader_v9SQLite.db', root).pathname, { readOnly: true });
+const db = new DatabaseSync(new URL('public/assets/databases/gurbani_reader_v10SQLite.db', root).pathname, { readOnly: true });
 const app = readFileSync(new URL('src/App.tsx', root), 'utf8');
 const gateway = readFileSync(new URL('src/lib/mobile-gateway.ts', root), 'utf8');
 const css = readFileSync(new URL('src/v016rc4.css', root), 'utf8');
@@ -13,12 +13,12 @@ const assert = (condition, message) => {
 };
 
 assert(
-  db.prepare("SELECT value FROM metadata WHERE key='schema_release'").get()?.value === 'v9',
-  'RC4 database schema is installed',
+  db.prepare("SELECT value FROM metadata WHERE key='schema_release'").get()?.value === 'v10',
+  'RC5 database schema is installed',
 );
 assert(
-  db.prepare("SELECT value FROM metadata WHERE key='tggsp_alignment_release'").get()?.value === 'rc4-heading-safe-v1',
-  'heading-safe TGGSP alignment release is installed',
+  db.prepare("SELECT value FROM metadata WHERE key='tggsp_alignment_release'").get()?.value === 'rc5-strict-line-or-passage-v1',
+  'strict-line-or-passage TGGSP alignment release is installed',
 );
 
 const shiftedHeadings = db.prepare(`
