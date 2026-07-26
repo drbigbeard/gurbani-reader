@@ -5,7 +5,7 @@ import { buildGurmukhiFtsQuery, buildRomanFtsQuery, containsGurmukhi, latinIniti
 
 const root = new URL('../', import.meta.url);
 const benchmark = JSON.parse(readFileSync(new URL('benchmarks/search-v015.json', root), 'utf8'));
-const db = new DatabaseSync(new URL('public/assets/databases/gurbani_reader_v9SQLite.db', root).pathname, { readOnly: true });
+const db = new DatabaseSync(new URL('public/assets/databases/gurbani_reader_v10SQLite.db', root).pathname, { readOnly: true });
 const measurements = [];
 let passed = 0;
 

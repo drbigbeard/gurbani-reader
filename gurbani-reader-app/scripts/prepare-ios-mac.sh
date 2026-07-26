@@ -14,7 +14,7 @@ fi
 
 npm ci
 
-if [[ ! -f public/assets/databases/gurbani_reader_v9SQLite.db ]]; then
+if [[ ! -f public/assets/databases/gurbani_reader_v10SQLite.db ]]; then
   npm run corpus:restore
   snapshot_root=".tmp/v013-banidb-snapshot"
   SNAPSHOT_GENERATED_AT=2026-07-19T00:00:00.000Z \
@@ -33,6 +33,9 @@ if [[ ! -f public/assets/databases/gurbani_reader_v9SQLite.db ]]; then
   npm run data:upgrade-v9 -- \
     public/assets/databases/gurbani_reader_v8SQLite.db \
     public/assets/databases/gurbani_reader_v9SQLite.db
+  npm run data:upgrade-v10 -- \
+    public/assets/databases/gurbani_reader_v9SQLite.db \
+    public/assets/databases/gurbani_reader_v10SQLite.db
 fi
 
 npm run audit:rc

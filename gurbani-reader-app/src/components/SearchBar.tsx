@@ -1,5 +1,10 @@
-import { useState } from "react";
-import { listenForSearch, voiceSearchAvailable } from "../lib/voice-search";
+import { useEffect, useState } from "react";
+import {
+  activeVoiceRoute,
+  listenForSearch,
+  stopVoiceSearch,
+  voiceSearchAvailable,
+} from "../lib/voice-search";
 import { GurmukhiKeyboard } from "./GurmukhiKeyboard";
 import { Icon } from "./Icon";
 
@@ -25,7 +30,18 @@ export function SearchBar({
   const [listening, setListening] = useState(false);
   const [alternatives, setAlternatives] = useState<string[]>([]);
 
+  useEffect(
+    () => () => {
+      void stopVoiceSearch();
+    },
+    [],
+  );
+
   async function startVoice() {
+    if (listening) {
+      await stopVoiceSearch();
+      return;
+    }
     setListening(true);
     setAlternatives([]);
     try {
@@ -36,7 +52,7 @@ export function SearchBar({
       setAlternatives(heard);
       await onVoice(heard);
       notify(
-        `Searched ${heard.length} recognised voice ${heard.length === 1 ? "transcript" : "alternatives"}.`,
+        `Searched ${heard.length} recognised voice ${heard.length === 1 ? "transcript" : "alternatives"} · ${activeVoiceRoute()}.`,
       );
     } catch (error) {
       fail(
@@ -86,11 +102,10 @@ export function SearchBar({
         <button
           type="button"
           className="voice-button"
-          aria-label="Voice search"
-          disabled={listening}
+          aria-label={listening ? "Stop voice search" : "Voice search"}
           onClick={() => void startVoice()}
         >
-          <Icon name={listening ? "graphic_eq" : "mic"} />
+          <Icon name={listening ? "stop_circle" : "mic"} />
         </button>
         <button aria-label="Run search">
           <Icon name="search" />

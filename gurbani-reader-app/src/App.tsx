@@ -35,7 +35,13 @@ import type {
   SearchHistoryEntry,
 } from "./lib/persistence";
 import { scoreSearchCandidate } from "./lib/search-core";
-import { listenForSearch, voiceSearchAvailable } from "./lib/voice-search";
+import {
+  activeVoiceRoute,
+  listenForSearch,
+  stopVoiceSearch,
+  voiceCapabilityReport,
+  voiceSearchAvailable,
+} from "./lib/voice-search";
 import type {
   BaniSection,
   BaniSummary,
@@ -2860,7 +2866,17 @@ function IdentifyKeertan({
   const [results, setResults] = useState<CorpusSearchResponse["results"]>([]);
   const [error, setError] = useState("");
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  useEffect(
+    () => () => {
+      void stopVoiceSearch();
+    },
+    [],
+  );
   const identify = async () => {
+    if (listening) {
+      await stopVoiceSearch();
+      return;
+    }
     setListening(true);
     setHeard([]);
     setResults([]);
@@ -2868,7 +2884,10 @@ function IdentifyKeertan({
     try {
       if (!(await voiceSearchAvailable()))
         throw new Error("Voice recognition is not available on this device.");
-      const alternatives = await listenForSearch("pa-IN");
+      const alternatives = await listenForSearch("pa-IN", {
+        maxDurationMs: 12_000,
+        source,
+      });
       const responses = [];
       for (const transcript of alternatives)
         responses.push(
@@ -2896,6 +2915,7 @@ function IdentifyKeertan({
         .slice(0, 5);
       setHeard(alternatives);
       setResults(matches);
+      notify(`Recognition route: ${activeVoiceRoute()}.`);
       setPersonal((current) => ({
         ...current,
         keertanTests: [
@@ -2932,7 +2952,9 @@ function IdentifyKeertan({
       </summary>
       <p>
         Let the microphone listen for a sung line. Every recognised transcript
-        is searched; no raw audio is retained.
+        is searched. If the device recogniser cannot understand Punjabi, the
+        app can securely transcribe a short recording through the enhanced
+        service after asking you first; Shabad Sojhi does not retain the audio.
       </p>
       <label>
         Audio source
@@ -2946,13 +2968,14 @@ function IdentifyKeertan({
       </label>
       {source === "same-device-speaker" && (
         <p className="notice">
-          Android may suppress sound played by the same phone. A nearby speaker
-          is more reliable in this beta.
+          Phones may suppress audio played by the same device, especially
+          through headphones. Playing the Keertan through the phone speaker or
+          a nearby speaker is more reliable in this beta.
         </p>
       )}
-      <button disabled={listening} onClick={() => void identify()}>
-        <Icon name="hearing" />{" "}
-        {listening ? "Listening…" : "Listen and identify"}
+      <button onClick={() => void identify()}>
+        <Icon name={listening ? "stop_circle" : "hearing"} />{" "}
+        {listening ? "Stop listening" : "Listen and identify"}
       </button>
       {error && (
         <p className="error" role="alert">
@@ -3625,6 +3648,7 @@ function Settings({
   exportData: () => Promise<void>;
   importData: (file: File) => Promise<void>;
 }) {
+  const [voiceReport, setVoiceReport] = useState("");
   return (
     <section>
       <PageHeading eyebrow="App" title="Settings">
@@ -3682,6 +3706,22 @@ function Settings({
             Experimental results are clearly labelled and never replace ordinary
             Gurbani search results.
           </p>
+          <button
+            className="secondary"
+            onClick={() =>
+              void voiceCapabilityReport().then((report) =>
+                setVoiceReport(JSON.stringify(report, null, 2)),
+              )
+            }
+          >
+            Check Punjabi recognition
+          </button>
+          {voiceReport && (
+            <details open>
+              <summary>Recognition capability report</summary>
+              <pre className="diagnostic-report">{voiceReport}</pre>
+            </details>
+          )}
         </section>
         <section className="panel">
           <h2>Help and sources</h2>

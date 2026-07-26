@@ -12,7 +12,7 @@ for (const test of cases.positive) {
   assert(theme?.id === test.theme, `“${test.query}” triggers only the reviewed ${test.theme} theme`);
 }
 for (const query of cases.negative) assert(resolveTggspTheme(query) === null, `“${query}” does not trigger thematic search`);
-const db = new DatabaseSync(new URL('../public/assets/databases/gurbani_reader_v9SQLite.db', import.meta.url).pathname, { readOnly:true });
+const db = new DatabaseSync(new URL('../public/assets/databases/gurbani_reader_v10SQLite.db', import.meta.url).pathname, { readOnly:true });
 for (const id of [...new Set(cases.positive.map(test => test.theme))]) {
   const theme=resolveTggspTheme(cases.positive.find(test => test.theme === id).query);
   const where=theme.searchTerms.map(() => 'lower(content) LIKE ?').join(' OR ');
