@@ -862,7 +862,7 @@ export class MobileCorpusGateway {
       WHERE (? = 'all' OR source_work_id = ?) ORDER BY upstream_id`,
       [sourceWorkId, sourceWorkId],
     );
-    return (result.values ?? []).map((row) => ({
+    const rows = (result.values ?? []).map((row) => ({
       id: String(row.id),
       token: String(row.token),
       sourceWorkId: String(row.sourceWorkId),
@@ -873,18 +873,34 @@ export class MobileCorpusGateway {
       tggspTranslatedLines: numberValue(row.tggspTranslatedLines),
       tggspAvailable: numberValue(row.tggspTranslatedLines) > 0,
     }));
+    if (sourceWorkId === "all" || sourceWorkId === "source:G") {
+      const fullAnand = rows.find((row) => row.token === "anand");
+      if (fullAnand) {
+        rows.push({
+          ...fullAnand,
+          id: "reading:anand-short",
+          token: "anand-short",
+          gurmukhi: "ਅਨੰਦੁ ਸਾਹਿਬ — ਪਹਿਲੀਆਂ ੫ ਪਉੜੀਆਂ ਅਤੇ ਅੰਤਿਮ ਪਉੜੀ",
+          transliteration: "Anand Sahib — first 5 Pauris and final Pauri",
+          verseCount: 35,
+        });
+      }
+    }
+    return rows;
   }
 
   async getBani(baniId: string): Promise<BaniView> {
     if (baniId.startsWith("tggsp:collection:"))
       return this.getTggspCollection(baniId.slice("tggsp:collection:".length));
+    const shortAnand = baniId === "reading:anand-short";
+    const sourceBaniId = shortAnand ? "bani:banidb:10" : baniId;
     const db = await this.db();
     const [summaryResult, linesResult] = await Promise.all([
       db.query(
         `SELECT id, token, source_work_id AS sourceWorkId, gurmukhi,
         COALESCE(transliteration, '') AS transliteration, verse_count AS verseCount,
         attribution_label AS attributionLabel FROM bani_collection WHERE id = ?`,
-        [baniId],
+        [sourceBaniId],
       ),
       db.query(
         `SELECT COALESCE(c.id,'bani-line:'||b.bani_id||':'||b.line_order) AS id,
@@ -895,8 +911,10 @@ export class MobileCorpusGateway {
         COALESCE(c.contributor_id,'') AS contributorId, COALESCE(k.preferred_name,'') AS contributorName
         FROM bani_collection_line b LEFT JOIN bani_line_crosswalk x ON x.bani_id=b.bani_id AND x.line_order=b.line_order
         LEFT JOIN canonical_line c ON c.id=x.canonical_line_id LEFT JOIN contributor k ON k.id=c.contributor_id
-        WHERE b.bani_id=? ORDER BY b.line_order`,
-        [baniId],
+        WHERE b.bani_id=?
+          ${shortAnand ? "AND (b.line_order <= 28 OR b.paragraph_number = 43)" : ""}
+        ORDER BY b.line_order`,
+        [sourceBaniId],
       ),
     ]);
     const row = first(summaryResult.values);
@@ -906,12 +924,16 @@ export class MobileCorpusGateway {
     );
     const translated = lines.filter((line) => line.tggspTranslation).length;
     return {
-      id: String(row.id),
-      token: String(row.token),
+      id: shortAnand ? baniId : String(row.id),
+      token: shortAnand ? "anand-short" : String(row.token),
       sourceWorkId: String(row.sourceWorkId),
-      gurmukhi: String(row.gurmukhi),
-      transliteration: String(row.transliteration),
-      verseCount: numberValue(row.verseCount),
+      gurmukhi: shortAnand
+        ? "ਅਨੰਦੁ ਸਾਹਿਬ — ਪਹਿਲੀਆਂ ੫ ਪਉੜੀਆਂ ਅਤੇ ਅੰਤਿਮ ਪਉੜੀ"
+        : String(row.gurmukhi),
+      transliteration: shortAnand
+        ? "Anand Sahib — first 5 Pauris and final Pauri"
+        : String(row.transliteration),
+      verseCount: shortAnand ? lines.length : numberValue(row.verseCount),
       attributionLabel: String(row.attributionLabel),
       tggspAvailable: translated > 0,
       tggspTranslatedLines: translated,
@@ -940,7 +962,7 @@ export class MobileCorpusGateway {
       FROM tggsp_collection c LEFT JOIN tggsp_collection_section s ON s.collection_code=c.code
       LEFT JOIN tggsp_line_alignment a ON a.collection_code=c.code
       GROUP BY c.code ORDER BY c.collection_order,c.title_en`);
-    return (result.values ?? []).map((row) => ({
+    const rows = (result.values ?? []).map((row) => ({
       code: String(row.code),
       titleEn: preferredReadingTitle(String(row.titleEn)),
       titlePa: String(row.titlePa),
@@ -951,9 +973,78 @@ export class MobileCorpusGateway {
       sectionCount: numberValue(row.sectionCount),
       translatedLineCount: numberValue(row.translatedLineCount),
     }));
+    const anandParts = rows.filter((row) =>
+      ["ASWC1", "SuhiM", "ASWC2"].includes(row.code),
+    );
+    const withoutParts = rows.filter(
+      (row) => !["ASWC1", "SuhiM", "ASWC2"].includes(row.code),
+    );
+    if (anandParts.length === 3) {
+      withoutParts.push({
+        code: "AnandSanskar",
+        titleEn: "Anand Sanskar · opening readings, Laavan and conclusion",
+        titlePa: "ਅਨੰਦ ਸੰਸਕਾਰ · ਆਰੰਭ, ਲਾਵਾਂ ਅਤੇ ਸਮਾਪਤੀ",
+        collectionType: "ceremonial",
+        collectionOrder: Math.min(...anandParts.map((row) => row.collectionOrder)),
+        sectionCount: anandParts.reduce((total, row) => total + row.sectionCount, 0),
+        translatedLineCount: anandParts.reduce(
+          (total, row) => total + row.translatedLineCount,
+          0,
+        ),
+      });
+    }
+    return withoutParts.sort(
+      (left, right) =>
+        left.collectionOrder - right.collectionOrder
+        || left.titleEn.localeCompare(right.titleEn),
+    );
   }
 
   async getTggspCollection(code: string): Promise<BaniView> {
+    if (code === "AnandSanskar") {
+      const parts = await Promise.all(
+        ["ASWC1", "SuhiM", "ASWC2"].map((part) => this.getTggspCollection(part)),
+      );
+      let lineOffset = 0;
+      const sections: NonNullable<BaniView["sections"]> = [];
+      const lines = parts.flatMap((part) => {
+        for (const section of part.sections ?? []) {
+          sections.push({
+            ...section,
+            title:
+              part.token === "SuhiM"
+                ? `Laavan · ${section.title}`
+                : section.title,
+            firstLineOrder: section.firstLineOrder + lineOffset,
+          });
+        }
+        const rows = part.lines.map((line, index) => ({
+          ...line,
+          order: lineOffset + index,
+        }));
+        lineOffset += rows.length;
+        return rows;
+      });
+      return {
+        id: "tggsp:collection:AnandSanskar",
+        token: "AnandSanskar",
+        sourceWorkId: "source:G",
+        gurmukhi: "ਅਨੰਦ ਸੰਸਕਾਰ",
+        transliteration: "Anand Sanskar · opening readings, Laavan and conclusion",
+        verseCount: lines.length,
+        attributionLabel: parts[0]?.attributionLabel ?? "",
+        tggspAvailable: parts.some((part) => part.tggspAvailable),
+        tggspTranslatedLines: parts.reduce(
+          (total, part) => total + (part.tggspTranslatedLines ?? 0),
+          0,
+        ),
+        introduction:
+          "The complete ceremony reading is presented in sequence: opening readings, Laavan, then concluding readings.",
+        collectionType: "ceremonial",
+        sections,
+        lines,
+      };
+    }
     const db = await this.db();
     const [collectionResult, sectionResult, lineResult] = await Promise.all([
       db.query(

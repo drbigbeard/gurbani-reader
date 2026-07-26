@@ -260,10 +260,24 @@ function groupProviderRecords(records) { const result = new Map(); for (const ro
 function compositionCode(id) { return String(id).replace(/^tggsp:bani:/u,''); }
 function cachedCanonical(textUnitId) { let rows=canonicalCache.get(textUnitId);if(!rows){rows=canonicalStatement.all(textUnitId);canonicalCache.set(textUnitId,rows);}return rows; }
 function resolveWithinUnit(text, canonical) { const exact=canonical.filter(line=>comparable(line.gurmukhi)===comparable(text));if(exact.length===1)return exact;const loose=canonical.filter(line=>looseComparable(line.gurmukhi)===looseComparable(text));if(loose.length===1)return loose;const ranges=[];for(let start=0;start<canonical.length;start+=1)for(let length=2;length<=5&&start+length<=canonical.length;length+=1){const slice=canonical.slice(start,start+length);if(comparable(slice.map(line=>line.gurmukhi).join(''))===comparable(text)||looseComparable(slice.map(line=>line.gurmukhi).join(''))===looseComparable(text))ranges.push(slice);}return ranges.length===1?ranges[0]:[]; }
-function alignTranslations(refs, translations) { if(!translations.length)return new Map();if(refs.length===translations.length)return new Map(refs.map((_,index)=>[index,translations[index]]));const difference=refs.length-translations.length;if(difference>0&&difference<=2&&refs.slice(0,difference).every(isHeading))return new Map(translations.map((value,index)=>[index+difference,value]));return null; }
+function alignTranslations(refs, translations) {
+  if (!translations.length) return new Map();
+  if (refs.length === translations.length) return new Map(refs.map((_, index) => [index, translations[index]]));
+  const difference = refs.length - translations.length;
+  if (difference <= 0 || difference > 2 || !refs.slice(0, difference).every(isHeading)) return null;
+  if (!isTranslatedHeading(translations[0])) {
+    return new Map(translations.map((value, index) => [index + difference, value]));
+  }
+  const map = new Map([[0, translations[0]]]);
+  const remainder = translations.slice(1);
+  const start = refs.length - remainder.length;
+  remainder.forEach((value, index) => map.set(start + index, value));
+  return map;
+}
 function providerLines(content, requireGurmukhi) { return plain(content,true).split(/\r?\n/gu).map(line=>line.replace(/\s+/gu,' ').trim()).filter(line=>line&&(!requireGurmukhi||/[਀-੿]/u.test(line))); }
 function isCitation(line) { return /^[-–—]\s*ਗੁਰੂ ਗ੍ਰੰਥ ਸਾਹਿਬ/u.test(line); }
 function isHeading(line) { return /^(ੴ|ਰਾਗੁ?|ਮਃ|ਮਹਲਾ|ਸਲੋਕ|ਸਲੋਕੁ|ਪਉੜੀ|ਆਸਾ|ਤਿਲੰਗ|ਬਿਲਾਵਲੁ|ਸੋਰਠਿ|ਮਾਰੂ|ਸੂਹੀ|ਰਾਮਕਲੀ|ਵਡਹੰਸੁ|ਸਿਰੀਰਾਗੁ)/u.test(line); }
+function isTranslatedHeading(line) { return /^(salok|pauri|rag|raag|mahala|first embodiment|second embodiment|third embodiment|fourth embodiment|fifth embodiment|ninth embodiment)/iu.test(line)||/^(ਸਲੋਕ|ਪਉੜੀ|ਰਾਗ|ਮਹਲਾ)/u.test(line); }
 function comparable(value) { return String(value).normalize('NFC').replace(/\u0A4D/gu,'\u0A51').replace(/[\u200B-\u200D\uFEFF\u00A0\s]/gu,''); }
 function looseComparable(value) { return comparable(value).replace(/[।॥|]/gu,''); }
 function plain(value, preserveLines=false) { const text=clean(value).replace(/<bani:[^>]*>/giu,'').replace(/<br\s*\/?\s*>/giu,'\n').replace(/<[^>]+>/gu,' ').replace(/&nbsp;/giu,' ').replace(/&amp;/giu,'&').replace(/&lt;/giu,'<').replace(/&gt;/giu,'>').replace(/&#39;/giu,"'").replace(/&quot;/giu,'"');return preserveLines?text.replace(/[ \t]+/gu,' '):text.replace(/\s+/gu,' ').trim(); }

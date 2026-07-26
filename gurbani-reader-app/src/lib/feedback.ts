@@ -9,7 +9,7 @@ import type {
 } from "./persistence";
 import type { CorpusSearchResult, SearchFilters } from "../types";
 
-export const APP_VERSION = "0.16.0-rc.3";
+export const APP_VERSION = "0.16.0-rc.4";
 export const FEEDBACK_EXPORT_FORMAT = "shabad-sojhi-feedback";
 
 export interface FeedbackExport {

@@ -40,7 +40,7 @@ npx cap sync
 cd android && ./gradlew assembleDebug # development only
 ```
 
-The database name is schema-versioned. Installing v0.15 RC 1 copies the v8
+The database name is schema-versioned. Installing v0.16 RC4 copies the v9
 reading database automatically. GitHub Actions compiles an unsigned build input;
 the release process signs and verifies the installable APK with the permanent
 private key. Local debug builds cannot upgrade that release. Personal data and

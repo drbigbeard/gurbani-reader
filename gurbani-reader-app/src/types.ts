@@ -37,7 +37,7 @@ export interface BrowseFilterState {
   baniCollections: Array<"nitnem" | "vaaran" | "life">;
   baniAvailability: Array<"tggsp">;
   baniPersonal: Array<"saved">;
-  baniSort: "name" | "count";
+  baniSort: "common" | "name" | "count";
   contributorTypes: Array<"guru" | "bhagat" | "bhatt" | "other">;
   contributorSort: "name" | "count";
   raagGroups: Array<"principal" | "other">;

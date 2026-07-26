@@ -23,7 +23,7 @@ export const defaultBrowseFilters: BrowseFilterState = {
   baniCollections: [],
   baniAvailability: [],
   baniPersonal: [],
-  baniSort: "name",
+  baniSort: "common",
   contributorTypes: [],
   contributorSort: "name",
   raagGroups: [],

@@ -1,6 +1,6 @@
 {
   "name": "shabad-sojhi-app",
-  "version": "0.16.0-rc.3",
+  "version": "0.16.0-rc.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -25,6 +25,7 @@
     "data:upgrade-v6": "node scripts/upgrade-mobile-db-v6.mjs",
     "data:upgrade-v7": "node scripts/upgrade-mobile-db-v7.mjs",
     "data:upgrade-v8": "node scripts/upgrade-mobile-db-v8.mjs",
+    "data:upgrade-v9": "node scripts/upgrade-mobile-db-v9.mjs",
     "corpus:restore": "node scripts/restore-corpus-pack.mjs",
     "native:sync": "npm run build:native && cap sync",
     "native:prepare-assets": "node scripts/prepare-native-assets.mjs",
@@ -39,6 +40,7 @@
     "@capacitor/core": "8.4.1",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/share": "^8.0.1",
+    "@capgo/capacitor-speech-recognition": "^8.1.10",
     "material-symbols": "^0.45.8",
     "react": "19.2.7",
     "react-dom": "19.2.7"

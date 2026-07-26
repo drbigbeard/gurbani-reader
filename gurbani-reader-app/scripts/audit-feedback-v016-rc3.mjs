@@ -14,7 +14,7 @@ const record = {
   schemaVersion: 1,
   id: 'feedback-1',
   createdAt: '2026-07-23T00:00:00.000Z',
-  appVersion: '0.16.0-rc.3',
+  appVersion: '0.16.0-rc.4',
   platform: 'android',
   kind: 'voice-search',
   verdict: 'wrong',
