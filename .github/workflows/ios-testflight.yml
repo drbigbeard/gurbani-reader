@@ -2,6 +2,8 @@ name: Upload Shabad Sojhi to TestFlight
 
 on:
   workflow_dispatch:
+  push:
+    branches: [agent/testflight-v016-rc4]
 
 permissions:
   contents: read
