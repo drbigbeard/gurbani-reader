@@ -8,13 +8,13 @@ if ! command -v xcodebuild >/dev/null 2>&1; then
   exit 1
 fi
 if ! command -v npm >/dev/null 2>&1; then
-  echo "Node.js 24 is required. Install the current Node.js 24 LTS release, then rerun this script." >&2
+  echo "Node.js 22 is required. Install the current Node.js 22 LTS release, then rerun this script." >&2
   exit 1
 fi
 
 npm ci
 
-if [[ ! -f public/assets/databases/gurbani_reader_v8SQLite.db ]]; then
+if [[ ! -f public/assets/databases/gurbani_reader_v9SQLite.db ]]; then
   npm run corpus:restore
   snapshot_root=".tmp/v013-banidb-snapshot"
   SNAPSHOT_GENERATED_AT=2026-07-19T00:00:00.000Z \
@@ -30,6 +30,9 @@ if [[ ! -f public/assets/databases/gurbani_reader_v8SQLite.db ]]; then
   npm run data:upgrade-v8 -- \
     public/assets/databases/gurbani_reader_v7SQLite.db \
     public/assets/databases/gurbani_reader_v8SQLite.db
+  npm run data:upgrade-v9 -- \
+    public/assets/databases/gurbani_reader_v8SQLite.db \
+    public/assets/databases/gurbani_reader_v9SQLite.db
 fi
 
 npm run audit:rc

@@ -1,0 +1,87 @@
+/* v0.16 RC4: narrow-phone layout, explicit saved state and discoverable Library. */
+.bani-star,
+.bani-star:hover {
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+  border: 1px solid var(--line);
+}
+.bani-star.saved,
+.bani-star.saved:hover {
+  color: var(--accent) !important;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+.bani-star.saved .app-icon {
+  font-variation-settings: "FILL" 1;
+}
+
+.saved-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: visible;
+  gap: 8px;
+}
+.saved-tabs button {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  white-space: normal;
+  text-align: left;
+}
+.saved-tabs .app-icon {
+  flex: 0 0 auto;
+}
+.reading-phase {
+  margin: 14px 2px 2px;
+  font-size: 16px;
+  color: var(--text-secondary);
+}
+.saved-bani-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+.saved-bani-row > button {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  background: var(--surface-neutral);
+  color: var(--text-primary);
+  border: 1px solid var(--line);
+}
+.saved-bani-row > div {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+}
+.saved-bani-row .icon-button {
+  min-width: 48px;
+  min-height: 44px;
+}
+
+@media (max-width: 430px) {
+  .home-reader-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .home-reader-row .ang-jump {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: end;
+  }
+  .home-reader-row .ang-jump label {
+    min-width: 0;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+  .home-reader-row .ang-jump .number-with-limit {
+    min-width: 104px;
+  }
+  .home-reader-row .ang-jump button {
+    min-width: 58px;
+  }
+  .saved-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

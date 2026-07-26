@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 22.22.0
           cache: npm
           cache-dependency-path: gurbani-reader-app/package-lock.json
 
@@ -74,6 +74,7 @@ jobs:
           npm run data:upgrade-v6 -- public/assets/databases/gurbani_reader_v5SQLite.db public/assets/databases/gurbani_reader_v6SQLite.db "$RUNNER_TEMP/v013-banidb-snapshot"
           npm run data:upgrade-v7 -- public/assets/databases/gurbani_reader_v6SQLite.db public/assets/databases/gurbani_reader_v7SQLite.db
           npm run data:upgrade-v8 -- public/assets/databases/gurbani_reader_v7SQLite.db public/assets/databases/gurbani_reader_v8SQLite.db
+          npm run data:upgrade-v9 -- public/assets/databases/gurbani_reader_v8SQLite.db public/assets/databases/gurbani_reader_v9SQLite.db
       - run: npm run audit:rc
       - run: npm run ios:prepare
       - run: npm run ios:audit

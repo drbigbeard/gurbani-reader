@@ -36,6 +36,7 @@ export interface ReaderPreferences {
   hiddenHomeModules: HomeModule[];
   onboardingComplete: boolean;
   showExperimentalFeatures: boolean;
+  baniOrderVersion: number;
   filterViews: {
     search: RememberedFilter<SearchFilters>;
     browse: RememberedFilter<BrowseFilterState>;
@@ -172,6 +173,7 @@ export const defaultPreferences: ReaderPreferences = {
   hiddenHomeModules: [],
   onboardingComplete: false,
   showExperimentalFeatures: true,
+  baniOrderVersion: 0,
   filterViews: {
     search: {
       current: defaultSearchFilters,

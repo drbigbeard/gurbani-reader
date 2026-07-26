@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Chrome } from "./components/Chrome";
 import { DataFooter, EmptyMetric, PageHeading } from "./components/Common";
@@ -145,6 +145,29 @@ export default function App() {
     "gurbani:personal:v1",
     defaultPersonalData,
   );
+  useEffect(() => {
+    if ((preferences.baniOrderVersion ?? 0) >= 1) return;
+    setPreferences((current) => {
+      const views = current.filterViews ?? defaultPreferences.filterViews;
+      return {
+        ...current,
+        baniOrderVersion: 1,
+        filterViews: {
+          ...views,
+          browse: {
+            current: {
+              ...normalizeBrowseFilters(views.browse?.current),
+              baniSort: "common",
+            },
+            defaultValue: {
+              ...normalizeBrowseFilters(views.browse?.defaultValue),
+              baniSort: "common",
+            },
+          },
+        },
+      };
+    });
+  }, [preferences.baniOrderVersion, setPreferences]);
   const activeFilterViews = preferences.filterViews ?? defaultPreferences.filterViews;
   const searchFilterMemory = activeFilterViews.search ?? defaultPreferences.filterViews.search;
   const searchFilters = normalizeSearchFilters(searchFilterMemory.current);
@@ -660,7 +683,9 @@ export default function App() {
       ...current,
       myBaniIds: toggleValue(current.myBaniIds, id),
     }));
-    setMessage(saving ? "Saved to Library." : "Removed from Saved Banis.");
+    setMessage(
+      saving ? "Added to Saved Banis." : "Removed from Saved Banis.",
+    );
   };
   return (
     <Chrome active={screen} onNavigate={navigate} onBack={back}>
@@ -1784,17 +1809,32 @@ function Browse(p: {
         (!f.baniAvailability.length || Boolean(x.tggspAvailable)) &&
         (!f.baniPersonal.length || p.myBaniIds.includes(x.id)),
     )
-    .sort((a, b) =>
-      f.baniSort === "count"
-        ? b.verseCount - a.verseCount
-        : baniDisplayName(a).localeCompare(baniDisplayName(b), "en", {
-            sensitivity: "base",
-          }),
-    );
+    .sort((a, b) => {
+      if (f.baniCollections.includes("nitnem")) {
+        return dailyOrder.indexOf(a.token) - dailyOrder.indexOf(b.token);
+      }
+      if (f.baniSort === "count") return b.verseCount - a.verseCount;
+      if (f.baniSort === "common") {
+        const rank = commonlyReadOrder(a.token) - commonlyReadOrder(b.token);
+        if (rank) return rank;
+      }
+      return baniDisplayName(a).localeCompare(baniDisplayName(b), "en", {
+        sensitivity: "base",
+      });
+    });
   const tggspRows = p.tggspCollections
     .filter((x) => fold(`${x.titleEn} ${x.titlePa} ${x.code}`).includes(q))
     .filter((x) => tggspLifeEventOrder(x.code) < 99)
-    .filter(() => f.baniCollections.includes("life"))
+    .filter(
+      (x) =>
+        f.baniCollections.includes("life")
+        || (
+          !f.baniCollections.length
+          && !f.baniPersonal.length
+          && f.baniSort === "common"
+          && x.code === "AnandSanskar"
+        ),
+    )
     .filter(() => !f.baniPersonal.length)
     .sort((a, b) => tggspLifeEventOrder(a.code) - tggspLifeEventOrder(b.code));
   const contributorRows = p.contributors
@@ -1910,32 +1950,55 @@ function Browse(p: {
           )}.
         </p>
       )}
+      {p.tab === "banis"
+        && !q
+        && !f.baniCollections.length
+        && !f.baniAvailability.length
+        && !f.baniPersonal.length
+        && f.baniSort === "common" && (
+          <p className="result-count">
+            Commonly read Banis appear first; the remaining readings follow A–Z.
+            Change or save a different order in Filters.
+          </p>
+        )}
       <div
         className={`browse-list ${p.tab === "words" ? "compact-words" : ""}`}
       >
         {p.tab === "banis" &&
-          baniRows.map((x) => (
-            <div className="bani-row" key={x.id}>
-              <button onClick={() => void p.openBani(x)}>
-                <span className="result-badges">
-                  <span className="gurmukhi">{x.gurmukhi}</span>
-                  {x.tggspAvailable && (
-                    <span className="tggsp-badge">TGGSP</span>
-                  )}
-                </span>
-                <strong>{baniDisplayName(x)}</strong>
-              </button>
-              <button
-                className="bani-star"
-                aria-label={`${p.myBaniIds.includes(x.id) ? "Remove from" : "Add to"} Saved Banis`}
-                onClick={() => p.toggleMyBani(x.id)}
-              >
-                <Icon
-                  name={p.myBaniIds.includes(x.id) ? "star" : "star_outline"}
-                />
-              </button>
-            </div>
-          ))}
+          baniRows.map((x, index) => {
+            const phase = f.baniCollections.includes("nitnem")
+              ? nitnemPhase(x.token)
+              : null;
+            const previousPhase =
+              index > 0 ? nitnemPhase(baniRows[index - 1].token) : null;
+            return (
+              <Fragment key={x.id}>
+                {phase && phase !== previousPhase && (
+                  <h2 className="reading-phase">{phase}</h2>
+                )}
+                <div className="bani-row">
+                  <button onClick={() => void p.openBani(x)}>
+                    <span className="result-badges">
+                      <span className="gurmukhi">{x.gurmukhi}</span>
+                      {x.tggspAvailable && (
+                        <span className="tggsp-badge">TGGSP</span>
+                      )}
+                    </span>
+                    <strong>{baniDisplayName(x)}</strong>
+                  </button>
+                  <button
+                    className={`bani-star ${p.myBaniIds.includes(x.id) ? "saved" : ""}`}
+                    aria-label={`${p.myBaniIds.includes(x.id) ? "Remove from" : "Add to"} Saved Banis`}
+                    onClick={() => p.toggleMyBani(x.id)}
+                  >
+                    <Icon
+                      name={p.myBaniIds.includes(x.id) ? "star" : "star_outline"}
+                    />
+                  </button>
+                </div>
+              </Fragment>
+            );
+          })}
         {p.tab === "banis" &&
           tggspRows.map((x) => (
             <button key={x.code} onClick={() => void p.openTggspCollection(x)}>
@@ -2119,6 +2182,12 @@ function browseSortOptions(tab: BrowseTab) {
       { value: "scripture", label: "Scripture order" },
       { value: "name", label: "A–Z" },
       { value: "count", label: "Most Shabads" },
+    ];
+  if (tab === "banis")
+    return [
+      { value: "common", label: "Commonly read" },
+      { value: "name", label: "A–Z" },
+      { value: "count", label: "Most lines" },
     ];
   return [
     { value: tab === "words" ? "count" : "name", label: tab === "words" ? "Most occurrences" : "A–Z" },
@@ -3292,6 +3361,17 @@ function Saved({
     }));
     setCollectionName("");
   };
+  const moveSavedBani = (id: string, delta: number) =>
+    setPersonal((current) => {
+      const next = [...current.myBaniIds];
+      const from = next.indexOf(id);
+      if (from < 0) return current;
+      const to = Math.max(0, Math.min(next.length - 1, from + delta));
+      if (from === to) return current;
+      next.splice(from, 1);
+      next.splice(to, 0, id);
+      return { ...current, myBaniIds: next };
+    });
   return (
     <section>
       <PageHeading eyebrow="Personal" title="Library">
@@ -3299,30 +3379,51 @@ function Saved({
         private on this device.
       </PageHeading>
       <div className="tabs saved-tabs">
-        {(
-          ["banis", "bookmarks", "notes", "collections", "history"] as const
-        ).map((value) => (
+        {([
+          { value: "banis", label: "Saved Banis", icon: "star" },
+          { value: "bookmarks", label: "Bookmarks", icon: "bookmark" },
+          { value: "notes", label: "Reflections", icon: "edit_note" },
+          { value: "collections", label: "Collections", icon: "folder" },
+          { value: "history", label: "History", icon: "history" },
+        ] as const).map(({ value, label, icon }) => (
           <button
             className={tab === value ? "active" : ""}
             onClick={() => setTab(value)}
             key={value}
           >
-            {value === "banis"
-              ? "Saved Banis"
-              : value === "notes"
-                ? "Reflections"
-                : title(value)}
+            <Icon name={icon} />
+            <span>{label}</span>
           </button>
         ))}
       </div>
       {tab === "banis" && (
         <div className="saved-list">
-          {savedBanis.map((row) => (
-            <button key={row.id} onClick={() => void openBani(row)}>
-              <span className="gurmukhi">{row.gurmukhi}</span>
-              <strong>{baniDisplayName(row)}</strong>
-              <small>Open reading →</small>
-            </button>
+          {savedBanis.map((row, index) => (
+            <div className="saved-bani-row" key={row.id}>
+              <button onClick={() => void openBani(row)}>
+                <span className="gurmukhi">{row.gurmukhi}</span>
+                <strong>{baniDisplayName(row)}</strong>
+                <small>Open reading →</small>
+              </button>
+              <div>
+                <button
+                  className="icon-button"
+                  aria-label={`Move ${baniDisplayName(row)} up`}
+                  disabled={index === 0}
+                  onClick={() => moveSavedBani(row.id, -1)}
+                >
+                  <Icon name="arrow_upward" />
+                </button>
+                <button
+                  className="icon-button"
+                  aria-label={`Move ${baniDisplayName(row)} down`}
+                  disabled={index === savedBanis.length - 1}
+                  onClick={() => moveSavedBani(row.id, 1)}
+                >
+                  <Icon name="arrow_downward" />
+                </button>
+              </div>
+            </div>
           ))}
           {!savedBanis.length && (
             <p className="empty">
@@ -4421,7 +4522,7 @@ function contributorSource(id: string, current: string) {
 function tggspLifeEventOrder(code: string) {
   return (
     (
-      { BANC: 1, IntCer: 2, ASWC1: 3, SuhiM: 4, ASWC2: 5, ASFC: 6 } as Record<
+      { BANC: 1, IntCer: 2, AnandSanskar: 3, ASFC: 4 } as Record<
         string,
         number
       >
@@ -4434,13 +4535,37 @@ function lifeEventContext(code: string) {
       {
         BANC: "Birth & naming",
         IntCer: "Amrit Sanskar",
-        ASWC1: "Anand Sanskar · opening",
-        SuhiM: "Anand Sanskar · Laavan",
-        ASWC2: "Anand Sanskar · conclusion",
+        AnandSanskar: "Anand Sanskar · complete sequence",
         ASFC: "Antam Sanskar",
       } as Record<string, string>
     )[code] ?? "Ceremony"
   );
+}
+function commonlyReadOrder(token: string) {
+  const sequence = [
+    "asadivar",
+    "sukhmani",
+    "salokm9",
+    "anand-short",
+    "anand",
+    "japji",
+    "rehras",
+    "kirtan-sohila",
+    "ardas",
+    "baarehmaha",
+    "sidhgosht",
+    "salokkabir",
+    "salokfareed",
+  ];
+  const index = sequence.indexOf(token);
+  return index < 0 ? 10_000 : index;
+}
+function nitnemPhase(token: string) {
+  if (["japji", "jaap", "tav-prasad-savaiye", "benti-chaupai", "anand"].includes(token))
+    return "Morning";
+  if (token === "rehras") return "Evening";
+  if (token === "kirtan-sohila") return "Night";
+  return null;
 }
 const mainRaagSequence = [
   "Siree Raag",
